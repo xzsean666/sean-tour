@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { PGKVDatabase } from '../helpers/utils/dbUtils/KVPostgresql';
+import { PGKVDatabase } from '../helpers/sdks/sean-tour/index';
 import { config } from '../config';
 
 export { PGKVDatabase };
@@ -38,30 +38,4 @@ export class DBService implements OnModuleDestroy {
 export const db_tables = {
   user_db: 'user_db',
   meta_db: 'meta_db',
-  persona_db: 'persona_db',
-  task_db: 'task_db',
-  favorite_db: 'favorite_db',
-  task_activity_db: 'task_activity_db',
-  active_task_db: 'active_task_db',
-  credential_db: 'credential_db',
-  project_db: 'project_db',
-  prompt_db: 'prompt_db',
-  user_checkin: 'user_checkin',
-  cards_db: 'cards_db',
-  messages: 'messages',
-  message_read_status: 'message_read_status',
-  user_subscription: 'user_subscription',
-  all_subscriptions: 'all_subscriptions',
-  payment_records: 'payment_records',
-  user_payment: 'user_payment',
-  promote_codes: 'promote_codes',
-};
-
-export const keys = {
-  user_study_cards: 'user_study_cards',
-  user_study_cards_history: 'user_study_cards_history',
-  user_study_cards_favorites: 'user_study_cards_favorites',
-  user_study_plans_current: 'user_study_plans_current',
-  user_knowns: 'user_knowns',
-  user_marked_words: 'user_marked_words',
 };

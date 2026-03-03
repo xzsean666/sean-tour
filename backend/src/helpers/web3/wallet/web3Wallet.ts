@@ -14,7 +14,7 @@ interface Web3WalletConfig {
   dbUrl: string;
   chainId: string;
   expiryHours: number;
-  tokenDecimals?: number; // 默认为 6 (USDT/USDC)
+  tokenDecimals?: number; // 默认 18（BSC USDT）
 }
 
 // 订单状态枚举
@@ -84,8 +84,8 @@ class Web3Wallet {
 
   constructor(config: Web3WalletConfig) {
     this.config = config;
-    // token decimals 默认 6 (USDT / USDC)
-    this.tokenDecimals = config.tokenDecimals ?? 6;
+    // 首版仅支持 BSC，USDT 在 BSC 上按 18 位精度处理
+    this.tokenDecimals = config.tokenDecimals ?? 18;
 
     this.web3 = new EthersTxBatchHelper(config.rpc, {
       private_key: config.privateKey,

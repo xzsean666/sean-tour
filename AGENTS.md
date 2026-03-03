@@ -72,3 +72,8 @@
 - Rule: `frontend/src/pages/auth` 下的认证页面必须统一采用 Tripadvisor 风格视觉，并优先使用 PrimeVue 组件 + TailwindCSS 工具类，不再新增自定义原子表单样式。
 - Why: 保持认证流程的一致体验与可维护性，降低页面分散演进导致的 UI 偏差。
 - Example (optional): 认证页统一复用 `src/components/auth/AuthSplitLayout.vue`，表单控件优先使用 PrimeVue 的 `InputText`、`Password`、`Button`、`Message`。
+
+### Rule 2026-03-03 Build Progress Tracking
+- Rule: 仓库根目录必须维护 `BuildProgress.md` 作为唯一进度看板。每次任务结束后都要更新「当前阶段」「已完成」「下一步」「阻塞项」。
+- Why: 方便快速查看当前迭代做到哪里，减少口头同步和上下文丢失。
+- Example (optional): 完成支付模块骨架后，在 `BuildProgress.md` 标记为已完成，并写明下一步是接入链上回调。

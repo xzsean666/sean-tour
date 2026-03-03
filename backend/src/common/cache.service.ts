@@ -1,5 +1,4 @@
-import { createCacheDecorator } from '../helpers/sdk';
-import { SqliteKVDatabase } from '../helpers/sdk/';
+import { createCacheDecorator, SqliteKVDatabase } from '../helpers/sdks/sean-tour/index';
 
 export const cacheFn = createCacheDecorator(
   new SqliteKVDatabase('db/cache.db'),

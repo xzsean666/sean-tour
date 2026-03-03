@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { SqliteKVDatabase } from '../helpers/sdk/index';
+import { SqliteKVDatabase } from '../helpers/sdks/sean-tour/index';
 import { config } from '../config';
 
 export { SqliteKVDatabase };
