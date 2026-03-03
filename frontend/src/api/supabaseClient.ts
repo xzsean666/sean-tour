@@ -1,9 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-let supabaseClient = null;
+let supabaseClient: SupabaseClient | null = null;
 
 if (supabaseUrl && supabaseAnonKey) {
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -15,11 +15,11 @@ if (supabaseUrl && supabaseAnonKey) {
   });
 }
 
-export function hasSupabaseConfig() {
+export function hasSupabaseConfig(): boolean {
   return Boolean(supabaseClient);
 }
 
-export function requireSupabaseClient() {
+export function requireSupabaseClient(): SupabaseClient {
   if (!supabaseClient) {
     throw new Error(
       'Supabase config missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',

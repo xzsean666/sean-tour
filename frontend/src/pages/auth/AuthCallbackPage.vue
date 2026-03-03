@@ -1,9 +1,10 @@
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
-import AuthCard from '../../components/AuthCard.vue';
+import Message from 'primevue/message';
 import { authService } from '../../api/authService';
 import { initAuthStore, useAuthStore } from '../../stores/auth.store';
+import AuthSplitLayout from '../../components/auth/AuthSplitLayout.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -92,12 +93,29 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AuthCard title="OAuth Callback" subtitle="Google sign-in result">
-    <p v-if="isLoading" class="status">{{ statusMessage }}</p>
-    <p v-if="errorMessage" class="status status-error">{{ errorMessage }}</p>
+  <AuthSplitLayout
+    title="Finishing sign in"
+    subtitle="We are validating your OAuth session."
+    hero-title="Secure social login for faster travel booking."
+    hero-description="Sean Tour confirms your provider session and restores your account state automatically."
+    :hero-points="[
+      'OAuth callback is validated server-side.',
+      'Session state is synced to your app store.',
+      'Automatic redirect after sign-in success.',
+    ]"
+  >
+    <Message v-if="isLoading" severity="info" class="mt-1">{{ statusMessage }}</Message>
+    <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
 
-    <div v-if="!isLoading" class="auth-links">
-      <RouterLink to="/auth/login">Back to login</RouterLink>
-    </div>
-  </AuthCard>
+    <template #footer>
+      <div v-if="!isLoading" class="mt-6 grid gap-2 text-sm">
+        <RouterLink
+          to="/auth/login"
+          class="font-medium text-emerald-700 transition hover:text-emerald-600 hover:underline"
+        >
+          Back to login
+        </RouterLink>
+      </div>
+    </template>
+  </AuthSplitLayout>
 </template>

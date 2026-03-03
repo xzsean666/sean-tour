@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import DemoPage from '../pages/DemoPage.vue';
 import LoginPage from '../pages/auth/LoginPage.vue';
 import RegisterPage from '../pages/auth/RegisterPage.vue';
@@ -7,7 +7,7 @@ import ResetPasswordPage from '../pages/auth/ResetPasswordPage.vue';
 import AuthCallbackPage from '../pages/auth/AuthCallbackPage.vue';
 import { initAuthStore, useAuthStore } from '../stores/auth.store';
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'demo-home',

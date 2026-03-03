@@ -1,8 +1,13 @@
-<script setup>
-import { ref } from 'vue';
+<script setup lang="ts">
+import { computed, ref } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
-import AuthCard from '../../components/AuthCard.vue';
+import Button from 'primevue/button';
+import Divider from 'primevue/divider';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Password from 'primevue/password';
 import { authService } from '../../api/authService';
+import AuthSplitLayout from '../../components/auth/AuthSplitLayout.vue';
 
 const router = useRouter();
 
@@ -12,6 +17,15 @@ const isSubmitting = ref(false);
 const isGoogleSubmitting = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+
+const isEmailLoginDisabled = computed(() => {
+  return (
+    !email.value.trim() ||
+    !password.value ||
+    isSubmitting.value ||
+    isGoogleSubmitting.value
+  );
+});
 
 async function handleEmailLogin() {
   errorMessage.value = '';
@@ -53,44 +67,87 @@ async function handleGoogleLogin() {
 </script>
 
 <template>
-  <AuthCard title="Sign In" subtitle="Email login or Google OAuth">
-    <form class="stack" @submit.prevent="handleEmailLogin">
-      <label class="field">
-        <span>Email</span>
-        <input v-model="email" class="input" type="email" required autocomplete="email" />
-      </label>
-
-      <label class="field">
-        <span>Password</span>
-        <input
-          v-model="password"
-          class="input"
-          type="password"
-          required
-          autocomplete="current-password"
+  <AuthSplitLayout
+    title="Welcome back"
+    subtitle="Sign in with email or continue with your social account."
+    hero-title="Travel smarter with a Tripadvisor-inspired booking experience."
+    hero-description="Compare stays, collect trusted reviews, and manage your whole itinerary in one place."
+    :hero-points="[
+      'Verified traveler reviews and ratings.',
+      'Price comparison across popular destinations.',
+      'Simple trip planning for your next adventure.',
+    ]"
+  >
+    <form class="mt-1 space-y-4" @submit.prevent="handleEmailLogin">
+      <div class="space-y-2">
+        <label for="login-email" class="text-sm font-medium text-slate-700">Email</label>
+        <InputText
+          id="login-email"
+          v-model="email"
+          type="email"
+          class="w-full"
+          autocomplete="email"
+          placeholder="you@example.com"
         />
-      </label>
+      </div>
 
-      <button class="btn btn-primary btn-block" type="submit" :disabled="isSubmitting">
-        {{ isSubmitting ? 'Signing in...' : 'Sign In with Email' }}
-      </button>
+      <div class="space-y-2">
+        <label for="login-password" class="text-sm font-medium text-slate-700">Password</label>
+        <Password
+          v-model="password"
+          input-id="login-password"
+          class="w-full"
+          input-class="w-full"
+          autocomplete="current-password"
+          placeholder="Enter your password"
+          :feedback="false"
+          toggle-mask
+        />
+      </div>
 
-      <button
-        class="btn btn-secondary btn-block"
+      <Button
+        type="submit"
+        label="Sign In with Email"
+        class="w-full !rounded-xl !border-slate-900 !bg-slate-900 !py-3 !text-sm !font-semibold hover:!border-slate-800 hover:!bg-slate-800"
+        :loading="isSubmitting"
+        :disabled="isEmailLoginDisabled"
+      />
+
+      <Divider align="center" class="!my-2">
+        <span class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">or</span>
+      </Divider>
+
+      <Button
         type="button"
-        :disabled="isGoogleSubmitting"
+        label="Continue with Google"
+        icon="pi pi-google"
+        severity="contrast"
+        outlined
+        class="w-full !rounded-xl !py-3 !text-sm !font-semibold"
+        :loading="isGoogleSubmitting"
+        :disabled="isSubmitting || isGoogleSubmitting"
         @click="handleGoogleLogin"
-      >
-        {{ isGoogleSubmitting ? 'Redirecting...' : 'Continue with Google' }}
-      </button>
+      />
     </form>
 
-    <p v-if="errorMessage" class="status status-error">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="status status-success">{{ successMessage }}</p>
+    <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
+    <Message v-if="successMessage" severity="success" class="mt-4">{{ successMessage }}</Message>
 
-    <div class="auth-links">
-      <RouterLink to="/auth/register">No account? Create one</RouterLink>
-      <RouterLink to="/auth/forgot-password">Forgot password?</RouterLink>
-    </div>
-  </AuthCard>
+    <template #footer>
+      <div class="mt-6 grid gap-2 text-sm">
+        <RouterLink
+          to="/auth/register"
+          class="font-medium text-emerald-700 transition hover:text-emerald-600 hover:underline"
+        >
+          No account yet? Create one
+        </RouterLink>
+        <RouterLink
+          to="/auth/forgot-password"
+          class="font-medium text-slate-600 transition hover:text-slate-900 hover:underline"
+        >
+          Forgot password?
+        </RouterLink>
+      </div>
+    </template>
+  </AuthSplitLayout>
 </template>

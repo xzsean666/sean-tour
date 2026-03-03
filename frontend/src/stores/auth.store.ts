@@ -1,13 +1,14 @@
+import type { User } from '@supabase/supabase-js';
 import { readonly, ref } from 'vue';
 import { authService } from '../api/authService';
 
-const user = ref(null);
+const user = ref<User | null>(null);
 const isReady = ref(false);
 
-let initPromise = null;
-let authSubscription = null;
+let initPromise: Promise<void> | null = null;
+let authSubscription: (() => void) | null = null;
 
-function ensureAuthSubscription() {
+function ensureAuthSubscription(): void {
   if (authSubscription) {
     return;
   }
@@ -17,7 +18,7 @@ function ensureAuthSubscription() {
     isReady.value = true;
   });
 
-  authSubscription = data?.subscription ?? null;
+  authSubscription = data?.subscription?.unsubscribe ?? null;
 }
 
 async function refreshUser() {

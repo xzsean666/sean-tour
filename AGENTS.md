@@ -67,3 +67,8 @@
 - Rule:
 - Why:
 - Example (optional):
+
+### Rule 2026-03-03 Auth UI Consistency
+- Rule: `frontend/src/pages/auth` 下的认证页面必须统一采用 Tripadvisor 风格视觉，并优先使用 PrimeVue 组件 + TailwindCSS 工具类，不再新增自定义原子表单样式。
+- Why: 保持认证流程的一致体验与可维护性，降低页面分散演进导致的 UI 偏差。
+- Example (optional): 认证页统一复用 `src/components/auth/AuthSplitLayout.vue`，表单控件优先使用 PrimeVue 的 `InputText`、`Password`、`Button`、`Message`。

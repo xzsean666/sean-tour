@@ -1,13 +1,20 @@
-<script setup>
-import { ref } from 'vue';
+<script setup lang="ts">
+import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
-import AuthCard from '../../components/AuthCard.vue';
+import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
 import { authService } from '../../api/authService';
+import AuthSplitLayout from '../../components/auth/AuthSplitLayout.vue';
 
 const email = ref('');
 const isSubmitting = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+
+const isSendDisabled = computed(() => {
+  return !email.value.trim() || isSubmitting.value;
+});
 
 async function handleSendResetEmail() {
   errorMessage.value = '';
@@ -29,26 +36,51 @@ async function handleSendResetEmail() {
 </script>
 
 <template>
-  <AuthCard
-    title="Forgot Password"
-    subtitle="Enter your email to receive a password reset link"
+  <AuthSplitLayout
+    title="Reset your password"
+    subtitle="Enter your email and we will send a secure reset link."
+    hero-title="Recover account access without contacting support."
+    hero-description="Use your registered email to receive a recovery link and get back to planning your trip."
+    :hero-points="[
+      'Secure one-time password reset flow.',
+      'Works on desktop and mobile browsers.',
+      'Fast return to your saved itineraries.',
+    ]"
   >
-    <form class="stack" @submit.prevent="handleSendResetEmail">
-      <label class="field">
-        <span>Email</span>
-        <input v-model="email" class="input" type="email" required autocomplete="email" />
-      </label>
+    <form class="mt-1 space-y-4" @submit.prevent="handleSendResetEmail">
+      <div class="space-y-2">
+        <label for="forgot-email" class="text-sm font-medium text-slate-700">Email</label>
+        <InputText
+          id="forgot-email"
+          v-model="email"
+          type="email"
+          class="w-full"
+          autocomplete="email"
+          placeholder="you@example.com"
+        />
+      </div>
 
-      <button class="btn btn-primary btn-block" type="submit" :disabled="isSubmitting">
-        {{ isSubmitting ? 'Sending...' : 'Send Reset Link' }}
-      </button>
+      <Button
+        type="submit"
+        label="Send Reset Link"
+        class="w-full !rounded-xl !border-slate-900 !bg-slate-900 !py-3 !text-sm !font-semibold hover:!border-slate-800 hover:!bg-slate-800"
+        :loading="isSubmitting"
+        :disabled="isSendDisabled"
+      />
     </form>
 
-    <p v-if="errorMessage" class="status status-error">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="status status-success">{{ successMessage }}</p>
+    <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
+    <Message v-if="successMessage" severity="success" class="mt-4">{{ successMessage }}</Message>
 
-    <div class="auth-links">
-      <RouterLink to="/auth/login">Back to login</RouterLink>
-    </div>
-  </AuthCard>
+    <template #footer>
+      <div class="mt-6 grid gap-2 text-sm">
+        <RouterLink
+          to="/auth/login"
+          class="font-medium text-emerald-700 transition hover:text-emerald-600 hover:underline"
+        >
+          Back to login
+        </RouterLink>
+      </div>
+    </template>
+  </AuthSplitLayout>
 </template>
