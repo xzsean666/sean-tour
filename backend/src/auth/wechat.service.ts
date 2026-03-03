@@ -8,13 +8,20 @@ interface WeChatLoginResult {
   unionid?: string;
 }
 
+export interface WechatIdentityResult {
+  openid: string;
+  sessionKey: string;
+  unionid?: string;
+  user_id: string;
+}
+
 @Injectable()
 export class WeChatService {
   // Hard-coded values or environment variables can be used directly
   private readonly appId = config.wechat.WECHAT_APP_ID;
   private readonly appSecret = config.wechat.WECHAT_APP_SECRET;
 
-  async verifyToken(code: string) {
+  async verifyToken(code: string): Promise<WechatIdentityResult> {
     try {
       if (!this.appId || !this.appSecret) {
         throw new HttpException(

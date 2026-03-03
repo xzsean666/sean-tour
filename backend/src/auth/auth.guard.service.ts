@@ -6,8 +6,8 @@ import {
   createParamDecorator,
 } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
-import { JWTHelper } from 'src/helpers/sdk';
-import { config } from 'src/config';
+import { JWTHelper } from '../helpers/sdk';
+import { config } from '../config';
 
 /**
  * 从执行上下文中获取请求对象，自动识别 GraphQL 或 REST API
@@ -27,8 +27,8 @@ function getRequestFromContext(context: ExecutionContext): any {
 
 export const CurrentUser = createParamDecorator(
   (data: unknown, context: ExecutionContext) => {
-    const ctx = GqlExecutionContext.create(context);
-    return ctx.getContext().req.user;
+    const request = getRequestFromContext(context);
+    return request.user;
   },
 );
 

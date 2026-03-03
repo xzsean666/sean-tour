@@ -1,12 +1,11 @@
-import {
-  BadRequestException,
-  HttpException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { WeChatService } from './wechat.service';
 import { UserService } from './user.service';
 import { SupabaseService } from './supabase.service';
+import { EmailAuthInput } from './dto/email-auth.input';
+import { GoogleLoginInput } from './dto/google-login.input';
+import { SupabaseTokenLoginInput } from './dto/supabase-token-login.input';
+import { CurrentUserDto } from './dto/current-user.dto';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +15,70 @@ export class AuthService {
     private supabaseService: SupabaseService,
   ) {}
 
+  async registerWithEmail(input: EmailAuthInput) {
+    this.assertEmailAndPassword(input.email, input.password);
+    const user = await this.supabaseService.registerWithEmail(
+      input.email,
+      input.password,
+    );
+
+    return this.userService.issueToken({
+      provider: 'supabase',
+      providerUserId: user.id,
+      email: user.email,
+      supabaseAccessToken: user.accessToken,
+      supabaseRefreshToken: user.refreshToken,
+    });
+  }
+
+  async loginWithEmail(input: EmailAuthInput) {
+    this.assertEmailAndPassword(input.email, input.password);
+    const user = await this.supabaseService.loginWithEmail(
+      input.email,
+      input.password,
+    );
+
+    return this.userService.issueToken({
+      provider: 'supabase',
+      providerUserId: user.id,
+      email: user.email,
+      supabaseAccessToken: user.accessToken,
+      supabaseRefreshToken: user.refreshToken,
+    });
+  }
+
+  async loginWithGoogle(input: GoogleLoginInput) {
+    if (!input.id_token?.trim()) {
+      throw new BadRequestException('Google id_token is required');
+    }
+
+    const user = await this.supabaseService.loginWithGoogleIdToken(
+      input.id_token,
+    );
+    return this.userService.issueToken({
+      provider: 'supabase',
+      providerUserId: user.id,
+      email: user.email,
+      supabaseAccessToken: user.accessToken,
+      supabaseRefreshToken: user.refreshToken,
+    });
+  }
+
+  async loginWithSupabaseToken(input: SupabaseTokenLoginInput) {
+    if (!input.access_token?.trim()) {
+      throw new BadRequestException('Supabase access_token is required');
+    }
+
+    const user = await this.supabaseService.verifyToken(input.access_token);
+    return this.userService.issueToken({
+      provider: 'supabase',
+      providerUserId: user.id,
+      email: user.email,
+      supabaseAccessToken: input.access_token,
+      supabaseRefreshToken: user.refreshToken,
+    });
+  }
+
   async wechatLogin(code: string) {
     if (!code?.trim()) {
       throw new BadRequestException('WeChat code is required');
@@ -23,40 +86,33 @@ export class AuthService {
 
     const wechatResult = await this.wechatService.verifyToken(code);
     if (!wechatResult?.user_id) {
-      throw new UnauthorizedException('Unable to resolve WeChat user');
+      throw new BadRequestException('Unable to resolve WeChat user');
     }
 
-    const user_account = `wechat_${wechatResult.user_id}`;
-    return this.userService.generateToken(user_account);
+    return this.userService.issueToken({
+      provider: 'wechat',
+      providerUserId: wechatResult.user_id,
+    });
   }
 
-  async supabaseLogin(code: string) {
-    if (!code?.trim()) {
-      throw new BadRequestException('Supabase token is required');
+  getCurrentUser(user: Record<string, unknown>): CurrentUserDto {
+    return {
+      user_id: typeof user.user_id === 'string' ? user.user_id : '',
+      user_account: typeof user.user_account === 'string' ? user.user_account : '',
+      provider: typeof user.provider === 'string' ? user.provider : '',
+      email: typeof user.email === 'string' ? user.email : undefined,
+    };
+  }
+
+  private assertEmailAndPassword(email?: string, password?: string) {
+    if (!email?.trim()) {
+      throw new BadRequestException('Email is required');
     }
-
-    try {
-      const supabase_user = await this.supabaseService.verifyToken(code);
-      if (!supabase_user?.id) {
-        throw new UnauthorizedException('Supabase user id not found');
-      }
-      const user_account = `supabase_${supabase_user.id}`;
-      return this.userService.generateToken(user_account);
-    } catch (error: any) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      console.error('supabaseLogin error:', error?.message || error);
-      throw new UnauthorizedException('Invalid code');
+    if (!password?.trim()) {
+      throw new BadRequestException('Password is required');
+    }
+    if (password.length < 6) {
+      throw new BadRequestException('Password length must be at least 6');
     }
   }
-
-  async mockLogin(user_id = '66666666666666666666666666666666') {
-    return this.userService.generateToken(user_id);
-  }
-
-  // Additional authentication methods can be added here
-  // For example:
-  // async googleLogin() { ... }
-  // async facebookLogin() { ... }
 }

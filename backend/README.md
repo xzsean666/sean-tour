@@ -25,6 +25,37 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Environment
+
+Copy `.env.example` to `.env` and fill values:
+
+```bash
+cp .env.example .env
+```
+
+Required keys for auth:
+
+- `JWT_SECRET`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `WECHAT_APP_ID` / `WECHAT_APP_SECRET` (only needed for WeChat login)
+
+## GraphQL Auth API
+
+GraphQL endpoint: `POST /graphql`
+
+Mutations:
+
+- `registerWithEmail(input: { email, password })`
+- `loginWithEmail(input: { email, password })`
+- `loginWithGoogle(input: { id_token })`
+- `loginWithSupabaseToken(input: { access_token })`
+- `loginWithWechat(code: String!)`
+
+Query:
+
+- `currentUser` (requires `Authorization: Bearer <token>`)
+
 ## Project setup
 
 ```bash

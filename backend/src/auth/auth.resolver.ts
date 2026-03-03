@@ -1,31 +1,45 @@
-import { Resolver, Args, Query } from '@nestjs/graphql';
+import { Resolver, Args, Query, Mutation } from '@nestjs/graphql';
 import { AuthService } from './auth.service';
-import { GraphQLJSON } from 'graphql-type-json';
 import { UseGuards } from '@nestjs/common';
 import { AuthGuard, CurrentUser } from './auth.guard.service';
 import { LoginResult } from './dto/login-result.dto';
+import { EmailAuthInput } from './dto/email-auth.input';
+import { GoogleLoginInput } from './dto/google-login.input';
+import { SupabaseTokenLoginInput } from './dto/supabase-token-login.input';
+import { CurrentUserDto } from './dto/current-user.dto';
 
 @Resolver()
 export class AuthResolver {
-  constructor(private authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
 
-  // @Query(() => LoginResult)
-  // async wechatLogin(@Args('code') code: string) {
-  //   return this.authService.wechatLogin(code);
-  // }
+  @Mutation(() => LoginResult)
+  registerWithEmail(@Args('input') input: EmailAuthInput) {
+    return this.authService.registerWithEmail(input);
+  }
 
-  // @Query(() => LoginResult)
-  // async supabaseLogin(@Args('code') code: string) {
-  //   return this.authService.supabaseLogin(code);
-  // }
+  @Mutation(() => LoginResult)
+  loginWithEmail(@Args('input') input: EmailAuthInput) {
+    return this.authService.loginWithEmail(input);
+  }
 
-  // @Query(() => LoginResult)
-  // async mockLogin(@Args('user_id', { nullable: true }) user_id?: string) {
-  //   return this.authService.mockLogin(user_id);
-  // }
-  // @Query(() => GraphQLJSON)
-  // @UseGuards(AuthGuard)
-  // currentUser(@CurrentUser() user: any) {
-  //   return user;
-  // }
+  @Mutation(() => LoginResult)
+  loginWithGoogle(@Args('input') input: GoogleLoginInput) {
+    return this.authService.loginWithGoogle(input);
+  }
+
+  @Mutation(() => LoginResult)
+  loginWithSupabaseToken(@Args('input') input: SupabaseTokenLoginInput) {
+    return this.authService.loginWithSupabaseToken(input);
+  }
+
+  @Mutation(() => LoginResult)
+  loginWithWechat(@Args('code') code: string) {
+    return this.authService.wechatLogin(code);
+  }
+
+  @Query(() => CurrentUserDto)
+  @UseGuards(AuthGuard)
+  currentUser(@CurrentUser() user: Record<string, unknown>) {
+    return this.authService.getCurrentUser(user);
+  }
 }

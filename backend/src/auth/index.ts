@@ -9,3 +9,8 @@ export { AuthModule } from './auth.module';
 
 // DTOs
 export * from './dto/invite-code.dto';
+export * from './dto/login-result.dto';
+export * from './dto/current-user.dto';
+export * from './dto/email-auth.input';
+export * from './dto/google-login.input';
+export * from './dto/supabase-token-login.input';

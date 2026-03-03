@@ -1,30 +1,62 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import { onMounted, ref } from 'vue';
+import { RouterLink, RouterView, useRouter } from 'vue-router';
+import { hasSupabaseConfig } from './api/supabaseClient';
+import { initAuthStore, useAuthStore } from './stores/auth.store';
+
+const router = useRouter();
+const { user, isReady, signOutFromAuthStore } = useAuthStore();
+
+const isSigningOut = ref(false);
+const supabaseConfigured = hasSupabaseConfig();
+
+onMounted(async () => {
+  await initAuthStore();
+});
+
+async function handleSignOut() {
+  isSigningOut.value = true;
+
+  const { error } = await signOutFromAuthStore();
+
+  isSigningOut.value = false;
+
+  if (!error) {
+    await router.push('/auth/login');
+  }
+}
 </script>
 
 <template>
-  <div>
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://vuejs.org/" target="_blank">
-      <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-    </a>
-  </div>
-  <HelloWorld msg="Vite + Vue" />
-</template>
+  <div class="app-shell">
+    <header class="topbar panel">
+      <RouterLink class="brand" to="/">Sean Tour</RouterLink>
 
-<style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
-}
-</style>
+      <nav class="nav-links">
+        <RouterLink to="/">Demo</RouterLink>
+        <RouterLink to="/auth/login">Login</RouterLink>
+        <RouterLink to="/auth/register">Register</RouterLink>
+      </nav>
+
+      <div class="session-block">
+        <span v-if="!isReady" class="muted">Checking session...</span>
+
+        <template v-else-if="user">
+          <span class="user-pill">{{ user.email || user.id }}</span>
+          <button class="btn btn-ghost" :disabled="isSigningOut" @click="handleSignOut">
+            {{ isSigningOut ? 'Signing out...' : 'Sign Out' }}
+          </button>
+        </template>
+      </div>
+    </header>
+
+    <p v-if="!supabaseConfigured" class="config-warning">
+      Supabase is not configured. Set VITE_SUPABASE_URL and
+      VITE_SUPABASE_ANON_KEY in frontend/.env.
+    </p>
+
+    <main class="page-container">
+      <RouterView />
+    </main>
+  </div>
+</template>
