@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JWTHelper } from '../helpers/utils/encodeUtils/jwtHelper';
+import { JWTHelper } from '../helpers/encodeUtils/jwtHelper';
 import { config } from '../config';
 import { createHash } from 'crypto';
 import { LoginResult } from './dto/login-result.dto';

@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
-import DemoPage from '../pages/DemoPage.vue';
+import ServicesPage from '../pages/ServicesPage.vue';
+import CheckoutPage from '../pages/CheckoutPage.vue';
+import OrdersPage from '../pages/OrdersPage.vue';
+import OrderDetailPage from '../pages/OrderDetailPage.vue';
 import LoginPage from '../pages/auth/LoginPage.vue';
 import RegisterPage from '../pages/auth/RegisterPage.vue';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.vue';
@@ -10,8 +13,27 @@ import { initAuthStore, useAuthStore } from '../stores/auth.store';
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    name: 'demo-home',
-    component: DemoPage,
+    name: 'services-home',
+    component: ServicesPage,
+  },
+  {
+    path: '/services',
+    redirect: '/',
+  },
+  {
+    path: '/checkout/:bookingId',
+    name: 'checkout',
+    component: CheckoutPage,
+  },
+  {
+    path: '/orders',
+    name: 'orders',
+    component: OrdersPage,
+  },
+  {
+    path: '/orders/:id',
+    name: 'order-detail',
+    component: OrderDetailPage,
   },
   {
     path: '/auth/login',

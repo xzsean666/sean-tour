@@ -33,7 +33,8 @@ async function handleSignOut() {
       <RouterLink class="brand" to="/">Sean Tour</RouterLink>
 
       <nav class="nav-links">
-        <RouterLink to="/">Demo</RouterLink>
+        <RouterLink to="/">Services</RouterLink>
+        <RouterLink to="/orders">Orders</RouterLink>
         <RouterLink to="/auth/login">Login</RouterLink>
         <RouterLink to="/auth/register">Register</RouterLink>
       </nav>
