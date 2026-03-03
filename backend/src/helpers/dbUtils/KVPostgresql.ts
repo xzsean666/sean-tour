@@ -242,28 +242,34 @@ export class PGKVDatabase {
             }),
             true, // ifNotExists: true
           );
+        }
 
-          // 只为 JSONB 类型创建 GIN 索引
+        // 即使表已存在也确保索引存在，避免老表无索引导致查询退化
+        try {
           if (this.value_type === 'jsonb') {
-            try {
-              await query_runner.query(
-                `CREATE INDEX IF NOT EXISTS "IDX_${this.table_name}_value_gin" ON "${this.table_name}" USING gin (value);`,
-              );
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              console.warn(`创建索引失败，可能已存在: ${message}`);
-            }
+            await query_runner.query(
+              `CREATE INDEX IF NOT EXISTS "IDX_${this.table_name}_value_gin" ON "${this.table_name}" USING gin (value);`,
+            );
           } else {
-            // 为其他类型创建 B-tree 索引
-            try {
-              await query_runner.query(
-                `CREATE INDEX IF NOT EXISTS "IDX_${this.table_name}_value_btree" ON "${this.table_name}" (value);`,
-              );
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              console.warn(`创建索引失败，可能已存在: ${message}`);
-            }
+            await query_runner.query(
+              `CREATE INDEX IF NOT EXISTS "IDX_${this.table_name}_value_btree" ON "${this.table_name}" (value);`,
+            );
           }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`创建 value 索引失败，可能已存在: ${message}`);
+        }
+
+        try {
+          await query_runner.query(
+            `CREATE INDEX IF NOT EXISTS "IDX_${this.table_name}_created_at" ON "${this.table_name}" (created_at);`,
+          );
+          await query_runner.query(
+            `CREATE INDEX IF NOT EXISTS "IDX_${this.table_name}_updated_at" ON "${this.table_name}" (updated_at);`,
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`创建时间索引失败，可能已存在: ${message}`);
         }
 
         // 只为 JSONB 类型创建 jsonb_deep_merge 函数
@@ -1242,6 +1248,7 @@ export class PGKVDatabase {
   async searchJson(search_options: {
     contains?: object;
     limit?: number;
+    offset?: number;
     cursor?: string;
     compare?: Array<{
       path: string;
@@ -1256,17 +1263,25 @@ export class PGKVDatabase {
     include_timestamps?: boolean;
     order_by?: 'ASC' | 'DESC';
     order_by_field?: 'key' | 'created_at' | 'updated_at';
+    include_total?: boolean;
   }): Promise<{
     data: any[];
     next_cursor: string | null;
+    total?: number;
   }> {
     this.checkTypeSupport('searchJson', ['jsonb']);
     await this.ensureInitialized();
 
-    const limit = search_options.limit || 100;
+    const limit = Math.min(Math.max(search_options.limit || 100, 1), 1000);
+    const offset = Math.max(search_options.offset || 0, 0);
     const include_timestamps = search_options.include_timestamps || false;
     const order_by = search_options.order_by || 'ASC';
     const order_by_field = search_options.order_by_field || 'key';
+
+    const allowed_order_fields = new Set(['key', 'created_at', 'updated_at']);
+    if (!allowed_order_fields.has(order_by_field)) {
+      throw new Error(`Invalid order_by_field: ${order_by_field}`);
+    }
 
     // 使用原生SQL查询，更直接地访问数据库
     try {
@@ -1275,7 +1290,6 @@ export class PGKVDatabase {
         ? 'key, value, created_at, updated_at'
         : 'key, value';
 
-      let query = `SELECT ${select_fields} FROM "${this.table_name}"`;
       const params: any[] = [];
       let param_index = 1;
 
@@ -1283,57 +1297,98 @@ export class PGKVDatabase {
       const where_conditions: string[] = [];
 
       // 处理 contains 条件（精确匹配）
-      if (search_options.contains) {
-        Object.entries(search_options.contains).forEach(([key, value]) => {
-          where_conditions.push(`value->>'${key}' = $${param_index}`);
-          params.push(String(value));
-          param_index++;
-        });
+      if (
+        search_options.contains &&
+        Object.keys(search_options.contains).length > 0
+      ) {
+        where_conditions.push(`value @> $${param_index}::jsonb`);
+        params.push(JSON.stringify(search_options.contains));
+        param_index++;
       }
 
       // 处理 compare 条件（比较操作）
       if (search_options.compare) {
         search_options.compare.forEach((condition) => {
+          const path_segments = condition.path.split('.');
+
+          if (typeof condition.value === 'number') {
+            where_conditions.push(
+              `(value #>> $${param_index}::text[])::numeric ${condition.operator} $${param_index + 1}::numeric`,
+            );
+            params.push(path_segments, condition.value);
+            param_index += 2;
+            return;
+          }
+
+          if (condition.value instanceof Date) {
+            where_conditions.push(
+              `(value #>> $${param_index}::text[])::timestamptz ${condition.operator} $${param_index + 1}::timestamptz`,
+            );
+            params.push(path_segments, condition.value.toISOString());
+            param_index += 2;
+            return;
+          }
+
           where_conditions.push(
-            `value->>'${condition.path}' ${condition.operator} $${param_index}`,
+            `(value #>> $${param_index}::text[]) ${condition.operator} $${param_index + 1}`,
           );
-          params.push(String(condition.value));
-          param_index++;
+          params.push(path_segments, String(condition.value));
+          param_index += 2;
         });
       }
 
       // 处理 text_search 条件（LIKE/ILIKE 搜索）
       if (search_options.text_search) {
         search_options.text_search.forEach((text_condition) => {
+          const path_segments = text_condition.path.split('.');
           const like_operator = text_condition.case_sensitive
             ? 'LIKE'
             : 'ILIKE';
           where_conditions.push(
-            `value->>'${text_condition.path}' ${like_operator} $${param_index}`,
+            `(value #>> $${param_index}::text[]) ${like_operator} $${param_index + 1}`,
           );
-          params.push(`%${text_condition.text}%`);
-          param_index++;
+          params.push(path_segments, `%${text_condition.text}%`);
+          param_index += 2;
         });
       }
 
       // 处理游标分页
       if (search_options.cursor) {
+        const cursor_operator = order_by === 'DESC' ? '<' : '>';
         if (order_by_field === 'key') {
-          where_conditions.push(`key > $${param_index}`);
+          where_conditions.push(`key ${cursor_operator} $${param_index}`);
         } else {
-          where_conditions.push(`${order_by_field} > $${param_index}`);
+          where_conditions.push(
+            `${order_by_field} ${cursor_operator} $${param_index}::timestamptz`,
+          );
         }
         params.push(search_options.cursor);
         param_index++;
       }
 
-      // 添加WHERE子句（如果有条件）
-      if (where_conditions.length > 0) {
-        query += ` WHERE ${where_conditions.join(' AND ')}`;
+      const where_clause =
+        where_conditions.length > 0
+          ? ` WHERE ${where_conditions.join(' AND ')}`
+          : '';
+
+      // 可选 total，避免业务层全量扫描后再计数
+      let total: number | undefined;
+      if (search_options.include_total) {
+        const count_query = `SELECT COUNT(*)::int as total FROM "${this.table_name}"${where_clause}`;
+        const count_rows = await this.db.query(count_query, params);
+        total = Number(count_rows?.[0]?.total || 0);
       }
 
-      // 添加排序和分页
-      query += ` ORDER BY ${order_by_field} ${order_by} LIMIT ${limit + 1}`;
+      let query = `SELECT ${select_fields} FROM "${this.table_name}"${where_clause}`;
+
+      // 添加WHERE子句（如果有条件）
+      if (offset > 0) {
+        query += ` ORDER BY ${order_by_field} ${order_by} OFFSET $${param_index} LIMIT $${param_index + 1}`;
+        params.push(offset, limit + 1);
+      } else {
+        query += ` ORDER BY ${order_by_field} ${order_by} LIMIT $${param_index}`;
+        params.push(limit + 1);
+      }
 
       const results = await this.db.query(query, params);
 
@@ -1344,17 +1399,10 @@ export class PGKVDatabase {
           ? data[data.length - 1][order_by_field]
           : null;
 
-      // 如果不需要时间戳，移除时间戳字段（保持向后兼容）
-      if (!include_timestamps) {
-        data.forEach((item: any) => {
-          delete item.created_at;
-          delete item.updated_at;
-        });
-      }
-
       return {
         data,
         next_cursor,
+        total,
       };
     } catch (error) {
       console.error('SearchJson query error:', error);
