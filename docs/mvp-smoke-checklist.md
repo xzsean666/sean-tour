@@ -50,27 +50,43 @@ export TX_HASH='0xsmoketest123'
 export CONFIRMATIONS='12'
 ```
 
-Generate signature (same rule as backend):
+Recommended: use helper script (auto-sign + send callback):
 
 ```bash
-export SIGNATURE=$(node -e "const c=require('crypto');const p=[process.env.EVENT_ID,'',process.env.BOOKING_ID,'PAID',process.env.EXPECTED_AMOUNT,process.env.TX_HASH,process.env.CONFIRMATIONS].join('|');process.stdout.write(c.createHmac('sha256',process.env.PAYMENT_CALLBACK_SECRET).update(p).digest('hex'));")
+pnpm --dir backend smoke:payment-callback \
+  --bookingId "${BOOKING_ID}" \
+  --endpoint callback \
+  --status PAID \
+  --paidAmount "${EXPECTED_AMOUNT}" \
+  --txHash "${TX_HASH}" \
+  --confirmations "${CONFIRMATIONS}" \
+  --eventId "${EVENT_ID}"
 ```
 
-Send callback:
+For dry run (only print signed payload, no request):
 
 ```bash
-curl -X POST 'http://localhost:3000/payment/callback/usdt' \
-  -H 'Content-Type: application/json' \
-  -H "admin_auth_code: ${ADMIN_AUTH_CODE}" \
-  -d "{
-    \"bookingId\": \"${BOOKING_ID}\",
-    \"status\": \"PAID\",
-    \"paidAmount\": \"${EXPECTED_AMOUNT}\",
-    \"txHash\": \"${TX_HASH}\",
-    \"confirmations\": ${CONFIRMATIONS},
-    \"eventId\": \"${EVENT_ID}\",
-    \"signature\": \"${SIGNATURE}\"
-  }"
+pnpm --dir backend smoke:payment-callback \
+  --bookingId "${BOOKING_ID}" \
+  --endpoint callback \
+  --status PAID \
+  --paidAmount "${EXPECTED_AMOUNT}" \
+  --txHash "${TX_HASH}" \
+  --confirmations "${CONFIRMATIONS}" \
+  --eventId "${EVENT_ID}" \
+  --dryRun
+```
+
+Trigger sync endpoint (`/payment/sync`, signature not required):
+
+```bash
+pnpm --dir backend smoke:payment-callback \
+  --endpoint sync \
+  --bookingId "${BOOKING_ID}" \
+  --status PARTIALLY_PAID \
+  --paidAmount "10.00" \
+  --confirmations "3" \
+  --eventId "evt_sync_$(date +%s)"
 ```
 
 Expected response:

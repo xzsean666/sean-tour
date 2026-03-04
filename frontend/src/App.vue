@@ -36,6 +36,7 @@ async function handleSignOut() {
         <RouterLink to="/">Services</RouterLink>
         <template v-if="user">
           <RouterLink to="/orders">Orders</RouterLink>
+          <RouterLink to="/assistant">Assistant</RouterLink>
           <RouterLink to="/admin/services">Admin</RouterLink>
           <RouterLink to="/admin/payments">Payments</RouterLink>
         </template>

@@ -10,6 +10,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { BookingModule } from './booking/booking.module';
 import { PaymentModule } from './payment/payment.module';
 import { OrderModule } from './order/order.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { OrderModule } from './order/order.module';
     BookingModule,
     PaymentModule,
     OrderModule,
+    AssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService],

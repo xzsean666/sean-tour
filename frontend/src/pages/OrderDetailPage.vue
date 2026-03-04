@@ -89,6 +89,12 @@ onMounted(async () => {
           <span class="text-slate-500">Expected:</span>
           {{ order.expectedAmount }} USDT
         </p>
+        <RouterLink
+          :to="`/assistant?bookingId=${order.bookingId}`"
+          class="inline-flex max-w-[260px] items-center justify-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+        >
+          Request Remote Assistant
+        </RouterLink>
         <div class="mt-3 border-t border-slate-200 pt-3">
           <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             Payment Events

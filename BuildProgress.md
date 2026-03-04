@@ -3,7 +3,7 @@
 ## Meta
 - Last Updated: 2026-03-04
 - Owner: Sean + Codex
-- Current Phase: MVP Stabilization
+- Current Phase: MVP Capability Completion
 
 ## Scope
 - 主题：支持 Crypto（MVP: USDT on BSC/ERC20）的中国旅行服务平台
@@ -63,6 +63,7 @@
   - 前端 checkout 页已增加支付状态轮询（15s）和支付成功自动跳转订单详情。
   - 前端已完成路由级懒加载（lazy import），构建产物拆分为多 chunk，主包体积告警已消除。
   - 已新增发布前最小手工冒烟清单 `docs/mvp-smoke-checklist.md`，覆盖登录->下单->签名回调->订单详情闭环与负向校验。
+  - 已新增 `backend/scripts/payment-callback-smoke.mjs` + `pnpm --dir backend smoke:payment-callback`，支持 callback/sync 两个入口的 smoke（callback 自动签名，含 dry-run）。
   - backend 定点 lint 已收口：`src/payment + src/order + src/catalog` 范围 `eslint` 通过。
   - backend 定点 lint 已收口：`src/auth` 范围 `eslint` 通过（`auth.guard/invite-code/otp` 等已完成类型收敛）。
   - backend 定点 lint 已收口：`src/common` 范围 `eslint` 通过（已完成 `worker.service` 类型安全收敛）。
@@ -73,12 +74,20 @@
   - 前端构建验证通过：`pnpm --dir frontend build`。
   - 后端构建验证通过：`pnpm --dir backend build`。
   - 支付链路关键测试通过：`payment.service.spec.ts`、`payment.entry.spec.ts`、`order-payment-flow.entry.spec.ts`。
+  - 后端新增 `assistant` 模块：`requestAssistantSession/myAssistantSessions/assistantSessionDetail/adminAssistantSessions/adminUpdateAssistantSession`，支持远程小助手会话创建、查询和管理状态推进。
+  - 前端新增 `/assistant` 页面与 `src/api/assistantService.ts`，已接入助手会话提单与历史会话列表；导航与订单详情已增加快捷入口。
+  - `booking` 新增核心风控：仅 `ACTIVE` 服务可下单、CAR 服务按 `seats` 校验 `travelerCount`、同用户同服务时间段重复预订拦截（排除已取消单）。
+  - 新增 `assistant.service.spec.ts`、`booking.service.spec.ts`，并更新 `order-payment-flow.entry.spec.ts` 以覆盖新风控后的稳定回归。
+  - `payment` 已接入 `helpers/web3/wallet/web3Wallet.ts`：`createUsdtPayment` 通过 `PaymentWalletService` 创建链上收款订单并动态分配收款地址（配置缺失时自动回退占位地址，避免开发环境阻塞）。
+  - 已新增支付链配置项：`PAYMENT_BSC_RPC_URL/PAYMENT_BSC_CHAIN_ID/PAYMENT_USDT_BSC_TOKEN_ADDRESS/PAYMENT_BATCH_CALL_ADDRESS/PAYMENT_MASTER_PRIVATE_KEY/PAYMENT_ORDER_EXPIRY_HOURS/PAYMENT_TOKEN_DECIMALS`。
+  - 已新增 `payment-wallet.service.spec.ts`，覆盖“配置缺失回退”与“完整配置下调用 Web3Wallet.createPaymentOrder”两条关键路径。
+  - 关键验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- payment/payment-wallet.service.spec.ts payment/payment.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
 - 进行中：
-  - MVP 回归与小问题收口（不新增复杂能力）。
+  - 助手模块上线后的端到端手工回归（用户提单 + 管理员派单 + 状态流转）。
 - 下一步：
-  - 保持 MVP：只做稳定性收口，不再新增复杂业务分支。
-  - 先做一轮后端支付链路手工回归（callback 签名、订单状态联动、admin replay）。
-  - 然后做前端 admin 页面最小体验修正（仅修问题，不加新能力）。
+  - 补充助手管理端最小运营面板（按状态筛选、批量分配、备注回显）。
+  - 配置并联调真实 USDT 收款环境参数（RPC/Token/BatchCall/MasterKey），完成链上订单创建与对账验证。
+  - 补充用户侧服务详情与下单参数（日期/人数）显式编辑，减少硬编码默认值。
 
 ## Blockers
 - 暂无硬阻塞。
@@ -128,3 +137,9 @@
 - 2026-03-04: backend 全量 `lint` 通过（0 error，保留少量历史 warning），`backend build` 再次验证通过。
 - 2026-03-04: 支付链路关键测试回归通过（`payment.service/payment.entry/order-payment-flow.entry`）。
 - 2026-03-04: 清理 legacy helper 最后一批 warning，`backend lint` 达到 0 error / 0 warning，并完成 build + 支付链路回归测试。
+- 2026-03-04: 新增 payment callback smoke 脚本（自动 HMAC 签名 + 调用 `/payment/callback/usdt`），并更新 `docs/mvp-smoke-checklist.md` 使用说明。
+- 2026-03-04: payment smoke 脚本扩展支持 `/payment/sync`（无签名模式）并补充文档示例，回归 `backend lint/build/test` 通过。
+- 2026-03-04: 新增后端 `assistant` 模块（会话创建/查询/管理更新）并注册到 `app.module.ts`，补齐“远程中国小助手”业务闭环基础能力。
+- 2026-03-04: 前端新增 `/assistant` 会话页与 API，订单详情新增“一键发起助手请求”入口。
+- 2026-03-04: `booking` 增加风控规则（服务状态校验、包车座位上限、重复时段预订拦截），并新增 `booking.service.spec.ts` 回归覆盖。
+- 2026-03-04: 新增 `PaymentWalletService` 并接入 `web3Wallet.ts`，`createUsdtPayment` 改为链上订单驱动的动态收款地址分配；同时补充配置项与 `payment-wallet.service.spec.ts` 回归。

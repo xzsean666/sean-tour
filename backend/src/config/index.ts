@@ -79,6 +79,19 @@ export const config = {
       toNumber(process.env.PAYMENT_REPLAY_COOLDOWN_SECONDS, 90),
       0,
     ),
+    BSC_RPC_URL: process.env.PAYMENT_BSC_RPC_URL ?? '',
+    BSC_CHAIN_ID: process.env.PAYMENT_BSC_CHAIN_ID ?? '56',
+    USDT_BSC_TOKEN_ADDRESS: process.env.PAYMENT_USDT_BSC_TOKEN_ADDRESS ?? '',
+    BATCH_CALL_ADDRESS: process.env.PAYMENT_BATCH_CALL_ADDRESS ?? '',
+    MASTER_PRIVATE_KEY: process.env.PAYMENT_MASTER_PRIVATE_KEY ?? '',
+    ORDER_EXPIRY_HOURS: Math.max(
+      toNumber(process.env.PAYMENT_ORDER_EXPIRY_HOURS, 0.5),
+      0.1,
+    ),
+    TOKEN_DECIMALS: Math.max(
+      toNumber(process.env.PAYMENT_TOKEN_DECIMALS, 18),
+      0,
+    ),
   },
   ALERT_CONFIG: alertConfig,
 };

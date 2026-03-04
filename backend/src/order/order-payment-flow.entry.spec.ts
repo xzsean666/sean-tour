@@ -241,6 +241,7 @@ describe('Order/payment flow integration', () => {
   const dbServiceMock: Partial<DBService> = {
     getDBInstance: jest.fn().mockReturnValue(db),
   };
+  let bookingRequestCount = 0;
 
   let app: INestApplication;
 
@@ -271,6 +272,16 @@ describe('Order/payment flow integration', () => {
     server: Parameters<typeof request>[0],
     token: string,
   ): Promise<string> {
+    const baseDate = new Date('2026-06-10T00:00:00.000Z');
+    baseDate.setUTCDate(baseDate.getUTCDate() + bookingRequestCount * 3);
+    const startDate = baseDate.toISOString().slice(0, 10);
+
+    const endDateValue = new Date(baseDate.getTime());
+    endDateValue.setUTCDate(endDateValue.getUTCDate() + 2);
+    const endDate = endDateValue.toISOString().slice(0, 10);
+
+    bookingRequestCount += 1;
+
     const response = await request(server)
       .post('/graphql')
       .set('Authorization', `Bearer ${token}`)
@@ -285,8 +296,8 @@ describe('Order/payment flow integration', () => {
         variables: {
           input: {
             serviceId: 'svc_pkg_beijing_001',
-            startDate: '2026-06-01',
-            endDate: '2026-06-03',
+            startDate,
+            endDate,
             travelerCount: 1,
           },
         },

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { CatalogService } from '../catalog/catalog.service';
+import { ServiceType } from '../catalog/dto/service-type.enum';
 import { DBService, PGKVDatabase } from '../common/db.service';
 import { Booking } from './dto/booking.dto';
 import { BookingListInput } from './dto/booking-list.input';
@@ -48,6 +49,28 @@ export class BookingService {
     const service = await this.catalogService.getServiceOrThrow(
       input.serviceId,
     );
+
+    if (service.status !== 'ACTIVE') {
+      throw new BadRequestException('Service is not available for booking');
+    }
+
+    if (
+      service.type === ServiceType.CAR &&
+      service.detail.__typename === 'CarServiceDetail' &&
+      input.travelerCount > service.detail.seats
+    ) {
+      throw new BadRequestException(
+        `travelerCount exceeds car seats limit (${service.detail.seats})`,
+      );
+    }
+
+    await this.assertNoOverlappingBooking(
+      userId,
+      service.id,
+      input.startDate,
+      input.endDate,
+    );
+
     const now = new Date().toISOString();
     const booking: BookingRecord = {
       entityType: 'BOOKING',
@@ -246,6 +269,67 @@ export class BookingService {
     if (end.getTime() < start.getTime()) {
       throw new BadRequestException('endDate must be on or after startDate');
     }
+  }
+
+  private async assertNoOverlappingBooking(
+    userId: string,
+    serviceId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<void> {
+    const result = await this.travelDB.searchJson({
+      contains: {
+        entityType: 'BOOKING',
+        userId,
+        serviceId,
+      },
+      limit: 100,
+      order_by: 'DESC',
+      order_by_field: 'created_at',
+    });
+
+    for (const row of result.data as SearchJsonRow[]) {
+      const existing = this.toBookingRecord(row.value);
+      if (!existing || existing.status === BookingStatus.CANCELED) {
+        continue;
+      }
+
+      if (
+        this.isDateRangeOverlapping(
+          startDate,
+          endDate,
+          existing.startDate,
+          existing.endDate,
+        )
+      ) {
+        throw new BadRequestException(
+          `Duplicate booking overlap detected with booking ${existing.id}`,
+        );
+      }
+    }
+  }
+
+  private isDateRangeOverlapping(
+    startA: string,
+    endA: string,
+    startB: string,
+    endB: string,
+  ): boolean {
+    const rangeAStart = new Date(startA).getTime();
+    const rangeAEnd = new Date(endA).getTime();
+    const rangeBStart = new Date(startB).getTime();
+    const rangeBEnd = new Date(endB).getTime();
+
+    if (
+      Number.isNaN(rangeAStart) ||
+      Number.isNaN(rangeAEnd) ||
+      Number.isNaN(rangeBStart) ||
+      Number.isNaN(rangeBEnd)
+    ) {
+      return false;
+    }
+
+    return rangeAStart <= rangeBEnd && rangeBStart <= rangeAEnd;
   }
 
   private generateBookingId(): string {

@@ -5,6 +5,7 @@ const ServicesPage = () => import('../pages/ServicesPage.vue');
 const CheckoutPage = () => import('../pages/CheckoutPage.vue');
 const OrdersPage = () => import('../pages/OrdersPage.vue');
 const OrderDetailPage = () => import('../pages/OrderDetailPage.vue');
+const AssistantPage = () => import('../pages/AssistantPage.vue');
 const AdminServicesPage = () => import('../pages/AdminServicesPage.vue');
 const AdminPaymentsPage = () => import('../pages/AdminPaymentsPage.vue');
 const LoginPage = () => import('../pages/auth/LoginPage.vue');
@@ -39,6 +40,12 @@ const routes: RouteRecordRaw[] = [
     path: '/orders/:id',
     name: 'order-detail',
     component: OrderDetailPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/assistant',
+    name: 'assistant',
+    component: AssistantPage,
     meta: { requiresAuth: true },
   },
   {

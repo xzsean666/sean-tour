@@ -1,10 +1,13 @@
 import { createHmac } from 'crypto';
 import type { BookingService } from '../booking/booking.service';
+import { BookingStatus } from '../booking/dto/booking-status.enum';
+import { ServiceType } from '../catalog/dto/service-type.enum';
 import type { DBService, PGKVDatabase } from '../common/db.service';
 import { config } from '../config';
 import { PaymentEventSource } from './dto/payment-event-source.enum';
 import { PaymentStatus } from './dto/payment-status.enum';
 import { UpdatePaymentStatusInput } from './dto/update-payment-status.input';
+import type { PaymentWalletService } from './payment-wallet.service';
 import { PaymentService } from './payment.service';
 
 jest.mock('../booking/booking.service', () => ({
@@ -140,6 +143,62 @@ describe('PaymentService', () => {
   afterEach(() => {
     config.payment.CALLBACK_SECRET = originalCallbackSecret;
     config.payment.REPLAY_COOLDOWN_SECONDS = originalReplayCooldownSeconds;
+  });
+
+  it('creates payment intent with wallet-derived address allocation', async () => {
+    const { db } = createInMemoryTravelDB();
+
+    const bookingServiceMock: Partial<BookingService> = {
+      getBookingByIdForUser: jest.fn().mockResolvedValue({
+        id: 'bk_wallet_1',
+        userId: 'user_wallet_1',
+        serviceId: 'svc_pkg_beijing_001',
+        serviceType: ServiceType.PACKAGE,
+        startDate: '2026-06-01',
+        endDate: '2026-06-03',
+        travelerCount: 2,
+        status: BookingStatus.PENDING_PAYMENT,
+        serviceSnapshot: {
+          title: 'Beijing 3-Day Culture Explorer',
+          city: 'Beijing',
+          basePrice: {
+            amount: 399,
+            currency: 'USDT',
+          },
+        },
+      }),
+      markBookingPaidById: jest.fn(),
+    };
+    const dbServiceMock: Partial<DBService> = {
+      getDBInstance: jest.fn().mockReturnValue(db),
+    };
+    const walletServiceMock: Partial<PaymentWalletService> = {
+      allocateAddressForPayment: jest.fn().mockResolvedValue({
+        payAddress: '0x1111222233334444555566667777888899990000',
+        expiredAt: '2026-03-05T12:00:00.000Z',
+        walletOrderHash: 'order_hash_1',
+        walletIndex: 7,
+      }),
+    };
+
+    const service = new PaymentService(
+      bookingServiceMock as BookingService,
+      dbServiceMock as DBService,
+      walletServiceMock as PaymentWalletService,
+    );
+
+    const result = await service.createUsdtPayment('user_wallet_1', {
+      bookingId: 'bk_wallet_1',
+    });
+
+    expect(walletServiceMock.allocateAddressForPayment).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(result.payAddress).toBe(
+      '0x1111222233334444555566667777888899990000',
+    );
+    expect(result.expiredAt).toBe('2026-03-05T12:00:00.000Z');
+    expect(result.expectedAmount).toBe('798.00');
   });
 
   it('rejects callback update when signature is invalid', async () => {

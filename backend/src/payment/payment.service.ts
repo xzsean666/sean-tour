@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { BookingService } from '../booking/booking.service';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
@@ -11,9 +11,15 @@ import { PaymentEventSource } from './dto/payment-event-source.enum';
 import { PaymentIntent } from './dto/payment-intent.dto';
 import { PaymentStatus } from './dto/payment-status.enum';
 import { UpdatePaymentStatusInput } from './dto/update-payment-status.input';
+import {
+  type PaymentAddressAllocation,
+  PaymentWalletService,
+} from './payment-wallet.service';
 
 type PaymentRecord = PaymentIntent & {
   entityType: 'PAYMENT';
+  walletOrderHash?: string;
+  walletIndex?: number;
 };
 
 export type PaymentEventLog = {
@@ -68,6 +74,8 @@ export class PaymentService {
   constructor(
     private readonly bookingService: BookingService,
     private readonly dbService: DBService,
+    @Optional()
+    private readonly paymentWalletService?: PaymentWalletService,
   ) {
     this.travelDB = this.dbService.getDBInstance('travel_kv');
   }
@@ -96,11 +104,16 @@ export class PaymentService {
       booking.serviceSnapshot.basePrice.amount * booking.travelerCount
     ).toFixed(2);
     const createdAt = new Date();
-    const expiredAt = new Date(createdAt.getTime() + 30 * 60 * 1000);
+    const paymentId = this.generatePaymentId();
+    const addressAllocation = await this.allocatePaymentAddress({
+      paymentId,
+      expectedAmount,
+      createdAt,
+    });
 
     const payment: PaymentRecord = {
       entityType: 'PAYMENT',
-      id: this.generatePaymentId(),
+      id: paymentId,
       bookingId: booking.id,
       userId,
       token: 'USDT',
@@ -108,11 +121,13 @@ export class PaymentService {
       tokenStandard: 'ERC20',
       expectedAmount,
       paidAmount: '0.00',
-      payAddress: '0x0000000000000000000000000000000000BEEF',
+      payAddress: addressAllocation.payAddress,
       txHash: undefined,
       confirmations: 0,
       status: PaymentStatus.PENDING,
-      expiredAt: expiredAt.toISOString(),
+      expiredAt: addressAllocation.expiredAt,
+      walletOrderHash: addressAllocation.walletOrderHash,
+      walletIndex: addressAllocation.walletIndex,
       createdAt: createdAt.toISOString(),
       updatedAt: createdAt.toISOString(),
     };
@@ -409,6 +424,37 @@ export class PaymentService {
     }
 
     return parsed.toFixed(2);
+  }
+
+  private async allocatePaymentAddress(params: {
+    paymentId: string;
+    expectedAmount: string;
+    createdAt: Date;
+  }): Promise<PaymentAddressAllocation> {
+    if (!this.paymentWalletService) {
+      return this.buildFallbackAddressAllocation(params.createdAt);
+    }
+
+    try {
+      return await this.paymentWalletService.allocateAddressForPayment({
+        paymentId: params.paymentId,
+        expectedAmount: params.expectedAmount,
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to allocate payment wallet address: ${this.getErrorMessage(error)}`,
+      );
+    }
+  }
+
+  private buildFallbackAddressAllocation(
+    createdAt: Date,
+  ): PaymentAddressAllocation {
+    const expiryMs = config.payment.ORDER_EXPIRY_HOURS * 60 * 60 * 1000;
+    return {
+      payAddress: '0x0000000000000000000000000000000000BEEF',
+      expiredAt: new Date(createdAt.getTime() + expiryMs).toISOString(),
+    };
   }
 
   private resolveStatus(
@@ -777,6 +823,18 @@ export class PaymentService {
     const { entityType, ...paymentIntent } = record;
     void entityType;
     return paymentIntent;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    return 'Unexpected payment wallet error';
   }
 
   private generatePaymentId(): string {
