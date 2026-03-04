@@ -8,6 +8,9 @@ export class BookingServiceSnapshot {
   @Field()
   title: string;
 
+  @Field()
+  city: string;
+
   @Field(() => PriceDto)
   basePrice: PriceDto;
 }

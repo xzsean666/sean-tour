@@ -1,11 +1,24 @@
-export type ServiceType = 'PACKAGE' | 'GUIDE' | 'CAR' | 'ASSISTANT';
+import { requestBackendGraphQL } from "./backendGraphqlClient";
+
+export type ServiceType = "PACKAGE" | "GUIDE" | "CAR" | "ASSISTANT";
 export type BookingStatus =
-  | 'PENDING_PAYMENT'
-  | 'PAID'
-  | 'CONFIRMED'
-  | 'IN_SERVICE'
-  | 'COMPLETED'
-  | 'CANCELED';
+  | "PENDING_PAYMENT"
+  | "PAID"
+  | "CONFIRMED"
+  | "IN_SERVICE"
+  | "COMPLETED"
+  | "CANCELED"
+  | "REFUNDING"
+  | "REFUNDED";
+
+type PaymentStatus =
+  | "PENDING"
+  | "PARTIALLY_PAID"
+  | "PAID"
+  | "UNDERPAID"
+  | "EXPIRED"
+  | "REFUNDING"
+  | "REFUNDED";
 
 export interface ServiceItem {
   id: string;
@@ -15,7 +28,7 @@ export interface ServiceItem {
   description: string;
   languages: string[];
   priceAmount: number;
-  currency: 'USDT';
+  currency: "USDT";
 }
 
 export interface ServicePage {
@@ -32,11 +45,11 @@ export interface CheckoutPreview {
   travelerCount: number;
   travelDateRange: string;
   expectedAmount: string;
-  currency: 'USDT';
-  network: 'BSC';
-  tokenStandard: 'ERC20';
+  currency: "USDT";
+  network: "BSC";
+  tokenStandard: "ERC20";
   payAddress: string;
-  paymentStatus: 'PENDING' | 'PAID' | 'EXPIRED';
+  paymentStatus: "PENDING" | "PAID" | "EXPIRED";
   expiresInMinutes: number;
 }
 
@@ -46,81 +59,170 @@ export interface OrderItem {
   serviceTitle: string;
   city: string;
   bookingStatus: BookingStatus;
-  paymentStatus: 'PENDING' | 'PAID' | 'EXPIRED';
+  paymentStatus: "PENDING" | "PAID" | "EXPIRED";
   expectedAmount: string;
   createdAt: string;
 }
 
-const SERVICE_MOCKS: ServiceItem[] = [
-  {
-    id: 'svc_pkg_beijing_001',
-    type: 'PACKAGE',
-    title: 'Beijing 3-Day Culture Explorer',
-    city: 'Beijing',
-    description: 'Imperial city route with local food and private transfer.',
-    languages: ['English', 'Chinese'],
-    priceAmount: 399,
-    currency: 'USDT',
-  },
-  {
-    id: 'svc_guide_shanghai_001',
-    type: 'GUIDE',
-    title: 'Shanghai Guide (Full Day)',
-    city: 'Shanghai',
-    description: 'Business + city highlights with multilingual local guidance.',
-    languages: ['English', 'Spanish', 'Chinese'],
-    priceAmount: 149,
-    currency: 'USDT',
-  },
-  {
-    id: 'svc_car_sz_001',
-    type: 'CAR',
-    title: 'Shenzhen Chauffeur 7-Seater',
-    city: 'Shenzhen',
-    description: 'Airport pickup and city charter with professional driver.',
-    languages: ['English', 'Chinese'],
-    priceAmount: 259,
-    currency: 'USDT',
-  },
-  {
-    id: 'svc_assistant_remote_001',
-    type: 'ASSISTANT',
-    title: 'Remote China Assistant (8h)',
-    city: 'Remote',
-    description: 'Live support for translation, booking, and emergency help.',
-    languages: ['English', 'Chinese', 'French'],
-    priceAmount: 99,
-    currency: 'USDT',
-  },
-];
+export interface OrderPage {
+  items: OrderItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
 
-const ORDER_MOCKS: OrderItem[] = [
-  {
-    id: 'ord_1001',
-    bookingId: 'bk_demo_1001',
-    serviceTitle: 'Beijing 3-Day Culture Explorer',
-    city: 'Beijing',
-    bookingStatus: 'PENDING_PAYMENT',
-    paymentStatus: 'PENDING',
-    expectedAmount: '798.00',
-    createdAt: '2026-03-03T09:30:00.000Z',
-  },
-  {
-    id: 'ord_1002',
-    bookingId: 'bk_demo_1002',
-    serviceTitle: 'Shanghai Guide (Full Day)',
-    city: 'Shanghai',
-    bookingStatus: 'PAID',
-    paymentStatus: 'PAID',
-    expectedAmount: '149.00',
-    createdAt: '2026-03-02T17:20:00.000Z',
-  },
-];
+type ServiceListGraphQL = {
+  serviceList: {
+    items: Array<{
+      id: string;
+      type: ServiceType;
+      title: string;
+      city: string;
+      description: string;
+      languages: string[];
+      basePrice: {
+        amount: number;
+        currency: "USDT";
+      };
+    }>;
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+};
 
-function delay(ms = 120): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+type BookingDetailGraphQL = {
+  bookingDetail: {
+    id: string;
+    serviceSnapshot: {
+      title: string;
+      city: string;
+      basePrice: {
+        amount: number;
+        currency: "USDT";
+      };
+    };
+    travelerCount: number;
+    status: BookingStatus;
+    startDate: string;
+    endDate: string;
+    createdAt: string;
+  };
+};
+
+type PaymentByBookingGraphQL = {
+  paymentByBooking: {
+    expectedAmount: string;
+    paidAmount: string;
+    payAddress: string;
+    network: "BSC";
+    tokenStandard: "ERC20";
+    status: PaymentStatus;
+    expiredAt: string;
+  } | null;
+};
+
+type CreateUsdtPaymentGraphQL = {
+  createUsdtPayment: {
+    expectedAmount: string;
+    paidAmount: string;
+    payAddress: string;
+    network: "BSC";
+    tokenStandard: "ERC20";
+    status: PaymentStatus;
+    expiredAt: string;
+  };
+};
+
+type CreateBookingGraphQL = {
+  createBooking: {
+    id: string;
+  };
+};
+
+type MyOrdersGraphQL = {
+  myOrders: {
+    items: Array<{
+      id: string;
+      bookingId: string;
+      serviceTitle: string;
+      city: string;
+      bookingStatus: BookingStatus;
+      paymentStatus: "PENDING" | "PAID" | "EXPIRED";
+      expectedAmount: string;
+      createdAt: string;
+    }>;
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+};
+
+type OrderDetailGraphQL = {
+  orderDetail: {
+    id: string;
+    bookingId: string;
+    serviceTitle: string;
+    city: string;
+    bookingStatus: BookingStatus;
+    paymentStatus: "PENDING" | "PAID" | "EXPIRED";
+    expectedAmount: string;
+    createdAt: string;
+  };
+};
+
+function asError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  if (typeof error === "string") {
+    return new Error(error);
+  }
+
+  return new Error("Unexpected travel service error.");
+}
+
+function toExpectedAmount(amount: number, travelerCount: number): string {
+  return (amount * travelerCount).toFixed(2);
+}
+
+function toCheckoutPaymentStatus(
+  status: PaymentStatus,
+): "PENDING" | "PAID" | "EXPIRED" {
+  if (status === "PAID") {
+    return "PAID";
+  }
+
+  if (status === "EXPIRED") {
+    return "EXPIRED";
+  }
+
+  return "PENDING";
+}
+
+function toFallbackPaymentStatus(
+  bookingStatus: BookingStatus,
+): "PENDING" | "PAID" | "EXPIRED" {
+  if (
+    bookingStatus === "PAID" ||
+    bookingStatus === "CONFIRMED" ||
+    bookingStatus === "IN_SERVICE" ||
+    bookingStatus === "COMPLETED" ||
+    bookingStatus === "REFUNDING" ||
+    bookingStatus === "REFUNDED"
+  ) {
+    return "PAID";
+  }
+
+  if (bookingStatus === "CANCELED") {
+    return "EXPIRED";
+  }
+
+  return "PENDING";
 }
 
 export const travelService = {
@@ -131,73 +233,283 @@ export const travelService = {
     limit?: number;
     offset?: number;
   }): Promise<ServicePage> {
-    await delay();
-
     const limit = Math.min(Math.max(params?.limit ?? 12, 1), 50);
     const offset = Math.max(params?.offset ?? 0, 0);
-    const cityKeyword = params?.city?.trim().toLowerCase();
-    const languageKeyword = params?.language?.trim().toLowerCase();
 
-    const filtered = SERVICE_MOCKS.filter((service) => {
-      if (params?.type && service.type !== params.type) {
-        return false;
-      }
-
-      if (cityKeyword && !service.city.toLowerCase().includes(cityKeyword)) {
-        return false;
-      }
-
-      if (
-        languageKeyword &&
-        !service.languages.some((item) =>
-          item.toLowerCase().includes(languageKeyword),
-        )
-      ) {
-        return false;
-      }
-
-      return true;
+    const data = await requestBackendGraphQL<ServiceListGraphQL>({
+      query: `
+        query ServiceList($input: ServiceListInput) {
+          serviceList(input: $input) {
+            items {
+              id
+              type
+              title
+              city
+              description
+              languages
+              basePrice {
+                amount
+                currency
+              }
+            }
+            total
+            limit
+            offset
+            hasMore
+          }
+        }
+      `,
+      variables: {
+        input: {
+          ...(params?.type ? { type: params.type } : {}),
+          ...(params?.city ? { city: params.city } : {}),
+          ...(params?.language ? { language: params.language } : {}),
+          page: {
+            limit,
+            offset,
+          },
+        },
+      },
     });
 
-    const items = filtered.slice(offset, offset + limit);
+    return {
+      items: data.serviceList.items.map((item) => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        city: item.city,
+        description: item.description,
+        languages: item.languages,
+        priceAmount: item.basePrice.amount,
+        currency: item.basePrice.currency,
+      })),
+      total: data.serviceList.total,
+      limit: data.serviceList.limit,
+      offset: data.serviceList.offset,
+      hasMore: data.serviceList.hasMore,
+    };
+  },
+
+  async createBooking(input: {
+    serviceId: string;
+    startDate: string;
+    endDate: string;
+    travelerCount: number;
+  }): Promise<{ bookingId: string }> {
+    const data = await requestBackendGraphQL<CreateBookingGraphQL>({
+      query: `
+        mutation CreateBooking($input: CreateBookingInput!) {
+          createBooking(input: $input) {
+            id
+          }
+        }
+      `,
+      variables: {
+        input,
+      },
+    });
 
     return {
-      items,
-      total: filtered.length,
-      limit,
-      offset,
-      hasMore: offset + items.length < filtered.length,
+      bookingId: data.createBooking.id,
     };
   },
 
   async getCheckoutPreview(bookingId: string): Promise<CheckoutPreview> {
-    await delay();
+    try {
+      const bookingData = await requestBackendGraphQL<BookingDetailGraphQL>({
+        query: `
+          query BookingDetail($bookingId: String!) {
+            bookingDetail(bookingId: $bookingId) {
+              id
+              serviceSnapshot {
+                title
+                city
+                basePrice {
+                  amount
+                  currency
+                }
+              }
+              travelerCount
+              status
+              startDate
+              endDate
+              createdAt
+            }
+          }
+        `,
+        variables: {
+          bookingId,
+        },
+      });
 
-    const order =
-      ORDER_MOCKS.find((item) => item.bookingId === bookingId) || ORDER_MOCKS[0];
+      const booking = bookingData.bookingDetail;
+      const fallbackPreview: CheckoutPreview = {
+        bookingId: booking.id,
+        serviceTitle: booking.serviceSnapshot.title,
+        travelerCount: booking.travelerCount,
+        travelDateRange: `${booking.startDate} to ${booking.endDate}`,
+        expectedAmount: toExpectedAmount(
+          booking.serviceSnapshot.basePrice.amount,
+          booking.travelerCount,
+        ),
+        currency: booking.serviceSnapshot.basePrice.currency,
+        network: "BSC",
+        tokenStandard: "ERC20",
+        payAddress: "-",
+        paymentStatus: toFallbackPaymentStatus(booking.status),
+        expiresInMinutes: 0,
+      };
 
-    return {
-      bookingId,
-      serviceTitle: order.serviceTitle,
-      travelerCount: 2,
-      travelDateRange: '2026-04-18 to 2026-04-20',
-      expectedAmount: order.expectedAmount,
-      currency: 'USDT',
-      network: 'BSC',
-      tokenStandard: 'ERC20',
-      payAddress: '0x0000000000000000000000000000000000BEEF',
-      paymentStatus: order.paymentStatus,
-      expiresInMinutes: 30,
-    };
+      const paymentData = await requestBackendGraphQL<PaymentByBookingGraphQL>({
+        query: `
+          query PaymentByBooking($bookingId: String!) {
+            paymentByBooking(bookingId: $bookingId) {
+              expectedAmount
+              paidAmount
+              payAddress
+              network
+              tokenStandard
+              status
+              expiredAt
+            }
+          }
+        `,
+        variables: {
+          bookingId,
+        },
+      });
+
+      let payment = paymentData.paymentByBooking;
+
+      if (!payment && booking.status === "PENDING_PAYMENT") {
+        const createPaymentData =
+          await requestBackendGraphQL<CreateUsdtPaymentGraphQL>({
+            query: `
+              mutation CreateUsdtPayment($input: CreateUsdtPaymentInput!) {
+                createUsdtPayment(input: $input) {
+                  expectedAmount
+                  paidAmount
+                  payAddress
+                  network
+                  tokenStandard
+                  status
+                  expiredAt
+                }
+              }
+            `,
+            variables: {
+              input: {
+                bookingId,
+              },
+            },
+          });
+
+        payment = createPaymentData.createUsdtPayment;
+      }
+
+      if (!payment) {
+        return fallbackPreview;
+      }
+
+      const expiresInMinutes = Math.max(
+        0,
+        Math.ceil((new Date(payment.expiredAt).getTime() - Date.now()) / 60000),
+      );
+
+      return {
+        ...fallbackPreview,
+        expectedAmount: payment.expectedAmount,
+        network: payment.network,
+        tokenStandard: payment.tokenStandard,
+        payAddress: payment.payAddress,
+        paymentStatus: toCheckoutPaymentStatus(payment.status),
+        expiresInMinutes,
+      };
+    } catch (error) {
+      throw asError(error);
+    }
   },
 
-  async getMyOrders(): Promise<OrderItem[]> {
-    await delay();
-    return [...ORDER_MOCKS].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  async getMyOrders(params?: {
+    bookingStatus?: BookingStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<OrderPage> {
+    try {
+      const limit = Math.min(Math.max(params?.limit ?? 10, 1), 50);
+      const offset = Math.max(params?.offset ?? 0, 0);
+
+      const data = await requestBackendGraphQL<MyOrdersGraphQL>({
+        query: `
+          query MyOrders($input: OrderListInput) {
+            myOrders(input: $input) {
+              items {
+                id
+                bookingId
+                serviceTitle
+                city
+                bookingStatus
+                paymentStatus
+                expectedAmount
+                createdAt
+              }
+              total
+              limit
+              offset
+              hasMore
+            }
+          }
+        `,
+        variables: {
+          input: {
+            ...(params?.bookingStatus
+              ? { bookingStatus: params.bookingStatus }
+              : {}),
+            page: {
+              limit,
+              offset,
+            },
+          },
+        },
+      });
+
+      return {
+        items: data.myOrders.items,
+        total: data.myOrders.total,
+        limit: data.myOrders.limit,
+        offset: data.myOrders.offset,
+        hasMore: data.myOrders.hasMore,
+      };
+    } catch (error) {
+      throw asError(error);
+    }
   },
 
   async getOrderDetail(orderId: string): Promise<OrderItem | null> {
-    await delay();
-    return ORDER_MOCKS.find((item) => item.id === orderId) ?? null;
+    try {
+      const data = await requestBackendGraphQL<OrderDetailGraphQL>({
+        query: `
+          query OrderDetail($orderId: String!) {
+            orderDetail(orderId: $orderId) {
+              id
+              bookingId
+              serviceTitle
+              city
+              bookingStatus
+              paymentStatus
+              expectedAmount
+              createdAt
+            }
+          }
+        `,
+        variables: {
+          orderId,
+        },
+      });
+
+      return data.orderDetail;
+    } catch {
+      return null;
+    }
   },
 };

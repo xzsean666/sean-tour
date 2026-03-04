@@ -4,10 +4,12 @@ import { GraphQLModule } from '@nestjs/graphql';
 import type { Request, Response } from 'express';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { GlobalModule } from './common/global.module';
 import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { BookingModule } from './booking/booking.module';
 import { PaymentModule } from './payment/payment.module';
+import { OrderModule } from './order/order.module';
 
 @Module({
   imports: [
@@ -20,10 +22,12 @@ import { PaymentModule } from './payment/payment.module';
         res,
       }),
     }),
+    GlobalModule,
     AuthModule,
     CatalogModule,
     BookingModule,
     PaymentModule,
+    OrderModule,
   ],
   controllers: [AppController],
   providers: [AppService],

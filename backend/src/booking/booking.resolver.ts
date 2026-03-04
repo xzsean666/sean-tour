@@ -13,20 +13,20 @@ export class BookingResolver {
 
   @Mutation(() => Booking)
   @UseGuards(AuthGuard)
-  createBooking(
+  async createBooking(
     @CurrentUser() user: Record<string, unknown>,
     @Args('input') input: CreateBookingInput,
-  ): Booking {
+  ): Promise<Booking> {
     return this.bookingService.createBooking(this.extractUserId(user), input);
   }
 
   @Mutation(() => Booking)
   @UseGuards(AuthGuard)
-  cancelBooking(
+  async cancelBooking(
     @CurrentUser() user: Record<string, unknown>,
     @Args('bookingId') bookingId: string,
     @Args('reason', { nullable: true }) reason?: string,
-  ): Booking {
+  ): Promise<Booking> {
     return this.bookingService.cancelBooking(
       this.extractUserId(user),
       bookingId,
@@ -36,19 +36,19 @@ export class BookingResolver {
 
   @Query(() => BookingPage)
   @UseGuards(AuthGuard)
-  myBookings(
+  async myBookings(
     @CurrentUser() user: Record<string, unknown>,
     @Args('input', { nullable: true }) input?: BookingListInput,
-  ): BookingPage {
+  ): Promise<BookingPage> {
     return this.bookingService.listMyBookings(this.extractUserId(user), input);
   }
 
   @Query(() => Booking)
   @UseGuards(AuthGuard)
-  bookingDetail(
+  async bookingDetail(
     @CurrentUser() user: Record<string, unknown>,
     @Args('bookingId') bookingId: string,
-  ): Booking {
+  ): Promise<Booking> {
     return this.bookingService.getBookingByIdForUser(
       this.extractUserId(user),
       bookingId,
