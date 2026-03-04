@@ -9,24 +9,71 @@ import { GqlExecutionContext } from '@nestjs/graphql';
 import { JWTHelper } from '../helpers/sdk';
 import { config } from '../config';
 
+type HeaderValue = string | string[] | undefined;
+
+type RequestLike = {
+  headers: Record<string, HeaderValue>;
+  user?: unknown;
+};
+
+type GqlContextLike = {
+  req?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
+}
+
+function isRequestLike(value: unknown): value is RequestLike {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return isRecord(value.headers);
+}
+
+function readHeaderValue(
+  headers: Record<string, HeaderValue>,
+  key: string,
+): string {
+  const value = headers[key];
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === 'string' ? first.trim() : '';
+  }
+
+  return '';
+}
+
 /**
  * 从执行上下文中获取请求对象，自动识别 GraphQL 或 REST API
  */
-function getRequestFromContext(context: ExecutionContext): any {
+function getRequestFromContext(context: ExecutionContext): RequestLike {
   const gqlContext = GqlExecutionContext.create(context);
   const isGraphQL = gqlContext.getType() === 'graphql';
 
   if (isGraphQL) {
-    // GraphQL请求
-    return gqlContext.getContext().req;
-  } else {
-    // REST API请求
-    return context.switchToHttp().getRequest();
+    const request = gqlContext.getContext<GqlContextLike>()?.req;
+    if (isRequestLike(request)) {
+      return request;
+    }
+    throw new UnauthorizedException('Invalid GraphQL request context');
   }
+
+  const request = context.switchToHttp().getRequest<unknown>();
+  if (isRequestLike(request)) {
+    return request;
+  }
+
+  throw new UnauthorizedException('Invalid HTTP request context');
 }
 
 export const CurrentUser = createParamDecorator(
-  (data: unknown, context: ExecutionContext) => {
+  (_data: unknown, context: ExecutionContext) => {
     const request = getRequestFromContext(context);
     return request.user;
   },
@@ -34,16 +81,16 @@ export const CurrentUser = createParamDecorator(
 
 // REST API专用的CurrentUser装饰器
 export const CurrentRestUser = createParamDecorator(
-  (data: unknown, context: ExecutionContext) => {
-    const request = context.switchToHttp().getRequest();
+  (_data: unknown, context: ExecutionContext) => {
+    const request = getRequestFromContext(context);
     return request.user;
   },
 );
 
 export const CheckAdmin = createParamDecorator(
-  (data: unknown, context: ExecutionContext) => {
+  (_data: unknown, context: ExecutionContext) => {
     const request = getRequestFromContext(context);
-    const adminAuthCode = request.headers['admin_auth_code'];
+    const adminAuthCode = readHeaderValue(request.headers, 'admin_auth_code');
 
     if (!adminAuthCode || adminAuthCode !== config.auth.ADMIN_AUTH_CODE) {
       throw new UnauthorizedException('Unauthorized: Invalid Admin Auth Code');
@@ -52,9 +99,15 @@ export const CheckAdmin = createParamDecorator(
   },
 );
 export const CanUploadFile = createParamDecorator(
-  (data: unknown, context: ExecutionContext) => {
+  (_data: unknown, context: ExecutionContext) => {
     const request = getRequestFromContext(context);
-    const canUploadFile = request.headers['can_upload_file'];
+    const canUploadFile = readHeaderValue(request.headers, 'can_upload_file');
+    if (!canUploadFile) {
+      throw new UnauthorizedException(
+        "Unauthorized: Invalid Can't Upload File",
+      );
+    }
+
     const jwtUploadHelper = new JWTHelper(config.auth.JWT_SECRET);
     const decoded = jwtUploadHelper.verifyToken(canUploadFile);
     if (!decoded) {
@@ -84,17 +137,23 @@ export class AuthGuard implements CanActivate {
 
     try {
       const decoded = this.jwtHelper.verifyToken(token);
-      req['user'] = decoded;
+      req.user = decoded;
       return true;
     } catch {
       throw new UnauthorizedException('Invalid token');
     }
   }
 
-  private extractTokenFromHeader(request: any): string | undefined {
-    const authHeader = request.headers.authorization;
-    const cleanHeader = authHeader?.replace(/"/g, '');
-    const [type, token] = cleanHeader?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+  private extractTokenFromHeader(request: RequestLike): string | undefined {
+    const authHeader = readHeaderValue(request.headers, 'authorization');
+    if (!authHeader) {
+      return undefined;
+    }
+
+    const cleanHeader = authHeader.replace(/"/g, '');
+    const [type, token] = cleanHeader.split(' ');
+    const normalizedToken = token?.trim();
+
+    return type === 'Bearer' && normalizedToken ? normalizedToken : undefined;
   }
 }

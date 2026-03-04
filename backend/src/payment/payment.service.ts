@@ -1,15 +1,57 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { BookingService } from '../booking/booking.service';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
 import { DBService, PGKVDatabase } from '../common/db.service';
+import { config } from '../config';
 import { CreateUsdtPaymentInput } from './dto/create-usdt-payment.input';
+import { PaymentEventListInput } from './dto/payment-event-list.input';
+import { PaymentEventPage } from './dto/payment-event-page.dto';
+import { PaymentEventSource } from './dto/payment-event-source.enum';
 import { PaymentIntent } from './dto/payment-intent.dto';
 import { PaymentStatus } from './dto/payment-status.enum';
 import { UpdatePaymentStatusInput } from './dto/update-payment-status.input';
 
 type PaymentRecord = PaymentIntent & {
   entityType: 'PAYMENT';
+};
+
+export type PaymentEventLog = {
+  eventId: string;
+  paymentId: string;
+  bookingId: string;
+  source: PaymentEventSource;
+  status: PaymentStatus;
+  paidAmount: string;
+  txHash?: string;
+  confirmations: number;
+  actor: string;
+  replayOfEventId?: string;
+  createdAt: string;
+};
+
+type PaymentEventRecord = {
+  entityType: 'PAYMENT_EVENT';
+  id: string;
+  eventId: string;
+  paymentId: string;
+  bookingId: string;
+  source: PaymentEventSource;
+  status: PaymentStatus;
+  paidAmount: string;
+  txHash?: string;
+  confirmations: number;
+  actor: string;
+  replayOfEventId?: string;
+  signature?: string;
+  payload: UpdatePaymentStatusInput;
+  createdAt: string;
+};
+
+type UpdatePaymentStatusOptions = {
+  requireSignature?: boolean;
+  source?: PaymentEventSource;
+  actor?: string;
 };
 
 type SearchJsonRow = {
@@ -93,9 +135,115 @@ export class PaymentService {
     return this.toPaymentIntent(payments[0]);
   }
 
+  async listPaymentEventsByBooking(
+    bookingId: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<PaymentEventLog[]> {
+    const normalizedBookingId = bookingId.trim();
+    if (!normalizedBookingId) {
+      throw new BadRequestException('bookingId is required');
+    }
+
+    const limit = Math.min(Math.max(options?.limit ?? 20, 1), 100);
+    const offset = Math.max(options?.offset ?? 0, 0);
+
+    const result = await this.travelDB.searchJson({
+      contains: {
+        entityType: 'PAYMENT_EVENT',
+        bookingId: normalizedBookingId,
+      },
+      limit,
+      offset,
+      order_by: 'DESC',
+      order_by_field: 'created_at',
+    });
+
+    return (result.data as SearchJsonRow[])
+      .map((row) => this.toPaymentEventRecord(row.value))
+      .filter((row): row is PaymentEventRecord => row !== null)
+      .map((row) => this.toPaymentEventLog(row));
+  }
+
+  async adminListPaymentEvents(
+    input?: PaymentEventListInput,
+  ): Promise<PaymentEventPage> {
+    const limit = Math.min(Math.max(input?.page?.limit ?? 20, 1), 100);
+    const offset = Math.max(input?.page?.offset ?? 0, 0);
+
+    const contains: Record<string, unknown> = {
+      entityType: 'PAYMENT_EVENT',
+    };
+
+    if (input?.eventId?.trim()) {
+      contains.eventId = input.eventId.trim();
+    }
+
+    if (input?.paymentId?.trim()) {
+      contains.paymentId = input.paymentId.trim();
+    }
+
+    if (input?.bookingId?.trim()) {
+      contains.bookingId = input.bookingId.trim();
+    }
+
+    if (input?.actor?.trim()) {
+      contains.actor = input.actor.trim();
+    }
+
+    if (input?.replayOfEventId?.trim()) {
+      contains.replayOfEventId = input.replayOfEventId.trim();
+    }
+
+    if (input?.status) {
+      contains.status = input.status;
+    }
+
+    if (input?.source) {
+      contains.source = input.source;
+    }
+
+    const result = await this.travelDB.searchJson({
+      contains,
+      limit,
+      offset,
+      include_total: true,
+      order_by: 'DESC',
+      order_by_field: 'created_at',
+    });
+
+    const items = (result.data as SearchJsonRow[])
+      .map((row) => this.toPaymentEventRecord(row.value))
+      .filter((row): row is PaymentEventRecord => row !== null)
+      .map((row) => this.toPaymentEventLog(row));
+
+    const total = result.total ?? items.length;
+
+    return {
+      items,
+      total,
+      limit,
+      offset,
+      hasMore: offset + items.length < total,
+    };
+  }
+
   async updatePaymentStatus(
     input: UpdatePaymentStatusInput,
+    options: UpdatePaymentStatusOptions = {},
   ): Promise<PaymentIntent> {
+    const source = options.source ?? PaymentEventSource.ADMIN;
+    const actor = this.resolveActor(source, options.actor);
+
+    this.assertCallbackSignature(input, options.requireSignature ?? false);
+
+    const idempotentPayment = await this.findPaymentByEventId(input.eventId);
+    if (idempotentPayment) {
+      return this.toPaymentIntent(idempotentPayment);
+    }
+
     const payment = await this.resolvePaymentForUpdate(input);
     const paidAmount = this.resolvePaidAmount(payment, input.paidAmount);
     const status = this.resolveStatus(payment, input.status, paidAmount);
@@ -112,8 +260,13 @@ export class PaymentService {
       updatedAt: new Date().toISOString(),
     };
 
+    if (await this.shouldSkipReplayUpdate(payment, updated, source)) {
+      return this.toPaymentIntent(payment);
+    }
+
     await this.travelDB.put(`payment:${updated.id}`, updated);
     await this.syncBookingStatus(updated);
+    await this.logPaymentEvent(updated, input, source, actor);
     return this.toPaymentIntent(updated);
   }
 
@@ -218,6 +371,30 @@ export class PaymentService {
     return this.toPaymentRecord(rows[0].value);
   }
 
+  private async findPaymentByEventId(
+    eventId?: string,
+  ): Promise<PaymentRecord | null> {
+    const normalizedEventId = eventId?.trim();
+    if (!normalizedEventId) {
+      return null;
+    }
+
+    const event = await this.travelDB.get<PaymentEventRecord>(
+      `payment_event:${normalizedEventId}`,
+    );
+    const eventRecord = this.toPaymentEventRecord(event);
+    if (!eventRecord) {
+      return null;
+    }
+
+    const payment = await this.getPaymentById(eventRecord.paymentId);
+    if (!payment) {
+      return null;
+    }
+
+    return this.normalizeExpiredPayment(payment);
+  }
+
   private resolvePaidAmount(
     payment: PaymentRecord,
     nextPaidAmount?: string,
@@ -296,6 +473,57 @@ export class PaymentService {
     }
   }
 
+  private async shouldSkipReplayUpdate(
+    currentPayment: PaymentRecord,
+    nextPayment: PaymentRecord,
+    source: PaymentEventSource,
+  ): Promise<boolean> {
+    if (!this.isReplayGuardSource(source)) {
+      return false;
+    }
+
+    if (!this.isSamePaymentState(currentPayment, nextPayment)) {
+      return false;
+    }
+
+    const cooldownSeconds = config.payment.REPLAY_COOLDOWN_SECONDS;
+    if (cooldownSeconds <= 0) {
+      return false;
+    }
+
+    const result = await this.travelDB.searchJson({
+      contains: {
+        entityType: 'PAYMENT_EVENT',
+        paymentId: nextPayment.id,
+        source,
+      },
+      limit: 20,
+      order_by: 'DESC',
+      order_by_field: 'created_at',
+    });
+
+    const cooldownMs = cooldownSeconds * 1000;
+    const now = Date.now();
+
+    for (const row of result.data as SearchJsonRow[]) {
+      const record = this.toPaymentEventRecord(row.value);
+      if (!record) {
+        continue;
+      }
+
+      const createdAt = new Date(record.createdAt).getTime();
+      if (!Number.isFinite(createdAt) || now - createdAt > cooldownMs) {
+        continue;
+      }
+
+      if (this.isSameEventState(record, nextPayment)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async normalizeExpiredPayment(
     payment: PaymentRecord,
     now = Date.now(),
@@ -318,11 +546,148 @@ export class PaymentService {
     return normalized;
   }
 
+  private async logPaymentEvent(
+    payment: PaymentRecord,
+    input: UpdatePaymentStatusInput,
+    source: PaymentEventSource,
+    actor: string,
+  ): Promise<void> {
+    const eventId = input.eventId?.trim() || this.generatePaymentEventId();
+    const createdAt = new Date().toISOString();
+    const eventRecord: PaymentEventRecord = {
+      entityType: 'PAYMENT_EVENT',
+      id: eventId,
+      eventId,
+      paymentId: payment.id,
+      bookingId: payment.bookingId,
+      source,
+      status: payment.status,
+      paidAmount: payment.paidAmount,
+      txHash: payment.txHash,
+      confirmations: payment.confirmations,
+      actor,
+      replayOfEventId: input.replayOfEventId?.trim() || undefined,
+      signature: input.signature?.trim() || undefined,
+      payload: {
+        ...input,
+        eventId,
+      },
+      createdAt,
+    };
+
+    await this.travelDB.put(`payment_event:${eventId}`, eventRecord);
+  }
+
+  private assertCallbackSignature(
+    input: UpdatePaymentStatusInput,
+    requireSignature: boolean,
+  ): void {
+    if (!requireSignature) {
+      return;
+    }
+
+    const callbackSecret = config.payment.CALLBACK_SECRET.trim();
+    if (!callbackSecret) {
+      throw new BadRequestException(
+        'PAYMENT_CALLBACK_SECRET is not configured',
+      );
+    }
+
+    const signature = input.signature?.trim();
+    if (!signature) {
+      throw new BadRequestException('signature is required');
+    }
+
+    const expectedSignature = this.computeCallbackSignature(
+      input,
+      callbackSecret,
+    );
+
+    if (!this.safeEqual(signature, expectedSignature)) {
+      throw new BadRequestException('Invalid callback signature');
+    }
+  }
+
+  private computeCallbackSignature(
+    input: UpdatePaymentStatusInput,
+    callbackSecret: string,
+  ): string {
+    const payload = [
+      input.eventId?.trim() || '',
+      input.paymentId?.trim() || '',
+      input.bookingId?.trim() || '',
+      input.status || '',
+      input.paidAmount?.trim() || '',
+      input.txHash?.trim() || '',
+      input.confirmations !== undefined ? String(input.confirmations) : '',
+    ].join('|');
+
+    return createHmac('sha256', callbackSecret).update(payload).digest('hex');
+  }
+
+  private safeEqual(a: string, b: string): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  }
+
   private isPendingStatus(status: PaymentStatus): boolean {
     return (
       status === PaymentStatus.PENDING ||
       status === PaymentStatus.PARTIALLY_PAID
     );
+  }
+
+  private isReplayGuardSource(source: PaymentEventSource): boolean {
+    return (
+      source === PaymentEventSource.ADMIN || source === PaymentEventSource.SYNC
+    );
+  }
+
+  private resolveActor(source: PaymentEventSource, actor?: string): string {
+    const normalizedActor = actor?.trim();
+    if (normalizedActor) {
+      return normalizedActor;
+    }
+
+    if (source === PaymentEventSource.CALLBACK) {
+      return 'callback_webhook';
+    }
+
+    if (source === PaymentEventSource.SYNC) {
+      return 'sync_job';
+    }
+
+    return 'admin_auth_code';
+  }
+
+  private isSamePaymentState(a: PaymentRecord, b: PaymentRecord): boolean {
+    return (
+      a.status === b.status &&
+      a.paidAmount === b.paidAmount &&
+      this.normalizeTxHash(a.txHash) === this.normalizeTxHash(b.txHash) &&
+      a.confirmations === b.confirmations
+    );
+  }
+
+  private isSameEventState(
+    event: PaymentEventRecord,
+    nextPayment: PaymentRecord,
+  ): boolean {
+    return (
+      event.status === nextPayment.status &&
+      event.paidAmount === nextPayment.paidAmount &&
+      this.normalizeTxHash(event.txHash) ===
+        this.normalizeTxHash(nextPayment.txHash) &&
+      event.confirmations === nextPayment.confirmations
+    );
+  }
+
+  private normalizeTxHash(value?: string): string | undefined {
+    const normalized = value?.trim();
+    return normalized ? normalized : undefined;
   }
 
   private toPaymentRecord(value: unknown): PaymentRecord | null {
@@ -351,6 +716,63 @@ export class PaymentService {
     return candidate as PaymentRecord;
   }
 
+  private toPaymentEventRecord(value: unknown): PaymentEventRecord | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const candidate = value as Partial<PaymentEventRecord>;
+    if (candidate.entityType !== 'PAYMENT_EVENT') {
+      return null;
+    }
+
+    if (
+      typeof candidate.id !== 'string' ||
+      typeof candidate.eventId !== 'string' ||
+      typeof candidate.paymentId !== 'string' ||
+      typeof candidate.bookingId !== 'string' ||
+      typeof candidate.source !== 'string' ||
+      typeof candidate.status !== 'string' ||
+      typeof candidate.paidAmount !== 'string' ||
+      typeof candidate.confirmations !== 'number' ||
+      typeof candidate.createdAt !== 'string'
+    ) {
+      return null;
+    }
+
+    const source = candidate.source;
+    const actor =
+      typeof candidate.actor === 'string'
+        ? candidate.actor.trim()
+        : this.resolveActor(source);
+    const replayOfEventId =
+      typeof candidate.replayOfEventId === 'string'
+        ? candidate.replayOfEventId.trim() || undefined
+        : undefined;
+
+    return {
+      ...(candidate as PaymentEventRecord),
+      actor: actor || this.resolveActor(source),
+      replayOfEventId,
+    };
+  }
+
+  private toPaymentEventLog(record: PaymentEventRecord): PaymentEventLog {
+    return {
+      eventId: record.eventId,
+      paymentId: record.paymentId,
+      bookingId: record.bookingId,
+      source: record.source,
+      status: record.status,
+      paidAmount: record.paidAmount,
+      txHash: record.txHash,
+      confirmations: record.confirmations,
+      actor: record.actor,
+      replayOfEventId: record.replayOfEventId,
+      createdAt: record.createdAt,
+    };
+  }
+
   private toPaymentIntent(record: PaymentRecord): PaymentIntent {
     const { entityType, ...paymentIntent } = record;
     void entityType;
@@ -359,5 +781,9 @@ export class PaymentService {
 
   private generatePaymentId(): string {
     return `pay_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+  }
+
+  private generatePaymentEventId(): string {
+    return `evt_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
   }
 }

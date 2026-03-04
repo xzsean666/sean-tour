@@ -33,17 +33,20 @@ export class JWTHelper {
     try {
       const decoded = jwt.verify(token, this.secretKey) as JWTPayload;
       return decoded;
-    } catch (error: any) {
-      if (error.name === 'TokenExpiredError') {
+    } catch (error: unknown) {
+      const errorName = this.getErrorName(error);
+      if (errorName === 'TokenExpiredError') {
         throw new Error('Token has expired');
       }
-      if (error.name === 'JsonWebTokenError') {
+      if (errorName === 'JsonWebTokenError') {
         throw new Error('Invalid token');
       }
-      if (error.name === 'NotBeforeError') {
+      if (errorName === 'NotBeforeError') {
         throw new Error('Token not active yet');
       }
-      throw new Error(`Token verification failed: ${error.message}`);
+      throw new Error(
+        `Token verification failed: ${this.getErrorMessage(error)}`,
+      );
     }
   }
 
@@ -90,5 +93,21 @@ export class JWTHelper {
     } catch {
       throw new Error('Invalid token');
     }
+  }
+
+  private getErrorName(error: unknown): string {
+    if (error instanceof Error) {
+      return error.name;
+    }
+
+    return '';
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 }

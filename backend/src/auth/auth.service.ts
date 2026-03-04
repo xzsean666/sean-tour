@@ -98,7 +98,8 @@ export class AuthService {
   getCurrentUser(user: Record<string, unknown>): CurrentUserDto {
     return {
       user_id: typeof user.user_id === 'string' ? user.user_id : '',
-      user_account: typeof user.user_account === 'string' ? user.user_account : '',
+      user_account:
+        typeof user.user_account === 'string' ? user.user_account : '',
       provider: typeof user.provider === 'string' ? user.provider : '',
       email: typeof user.email === 'string' ? user.email : undefined,
     };

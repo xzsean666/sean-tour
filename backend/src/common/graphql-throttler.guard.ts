@@ -1,13 +1,23 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import {
+  ThrottlerGuard,
+  type ThrottlerModuleOptions,
+  type ThrottlerStorage,
+} from '@nestjs/throttler';
 import { Reflector } from '@nestjs/core';
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : {};
+}
 
 @Injectable()
 export class GraphQLThrottlerGuard extends ThrottlerGuard {
   constructor(
-    private readonly _options: any,
-    private readonly _storageService: any,
+    private readonly _options: ThrottlerModuleOptions,
+    private readonly _storageService: ThrottlerStorage,
     private readonly _reflector: Reflector,
   ) {
     super(_options, _storageService, _reflector);
@@ -34,22 +44,52 @@ export class GraphQLThrottlerGuard extends ThrottlerGuard {
 
     if (isGraphQL) {
       // GraphQL请求 - 从上下文获取request对象
-      const ctx = gqlContext.getContext();
-      return { req: ctx.req, res: ctx.res || ctx.req.res };
-    } else {
-      // REST API请求 - 使用默认处理
-      const http = context.switchToHttp();
-      return { req: http.getRequest(), res: http.getResponse() };
+      const ctx = gqlContext.getContext<{ req?: unknown; res?: unknown }>();
+      const req = toRecord(ctx?.req);
+      const ctxRes = toRecord(ctx?.res);
+      const reqRes = toRecord(req.res);
+
+      return {
+        req: req as Record<string, any>,
+        res:
+          Object.keys(ctxRes).length > 0
+            ? (ctxRes as Record<string, any>)
+            : (reqRes as Record<string, any>),
+      };
     }
+
+    // REST API请求 - 使用默认处理
+    const http = context.switchToHttp();
+    const req = toRecord(http.getRequest<unknown>());
+    const res = toRecord(http.getResponse<unknown>());
+    return {
+      req: req as Record<string, any>,
+      res: res as Record<string, any>,
+    };
   }
 
-  protected async getTracker(req: Record<string, any>): Promise<string> {
+  protected getTracker(req: Record<string, any>): Promise<string> {
     // 从请求中提取客户端标识符（IP地址）
-    return (
-      req.ip ||
-      req.connection?.remoteAddress ||
-      req.socket?.remoteAddress ||
-      'unknown'
-    );
+    const request = req as {
+      ip?: unknown;
+      connection?: { remoteAddress?: unknown };
+      socket?: { remoteAddress?: unknown };
+    };
+
+    if (typeof request.ip === 'string' && request.ip.trim()) {
+      return Promise.resolve(request.ip);
+    }
+
+    const connectionIp = request.connection?.remoteAddress;
+    if (typeof connectionIp === 'string' && connectionIp.trim()) {
+      return Promise.resolve(connectionIp);
+    }
+
+    const socketIp = request.socket?.remoteAddress;
+    if (typeof socketIp === 'string' && socketIp.trim()) {
+      return Promise.resolve(socketIp);
+    }
+
+    return Promise.resolve('unknown');
   }
 }

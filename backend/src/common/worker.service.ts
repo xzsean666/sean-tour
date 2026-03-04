@@ -2,12 +2,14 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Worker } from 'worker_threads';
 import * as crypto from 'crypto';
 
-type Task<T = any> = {
+type WorkerTaskFunction<T = unknown> = (...args: unknown[]) => T | Promise<T>;
+
+type Task<T = unknown> = {
   id: string;
-  func: (...args: any[]) => T | Promise<T>;
-  args: any[];
+  func: WorkerTaskFunction<T>;
+  args: unknown[];
   resolve?: (value: T) => void;
-  reject?: (err: any) => void;
+  reject?: (err: Error) => void;
   fireAndForget?: boolean;
   timeout?: number;
   retries?: number;
@@ -22,15 +24,73 @@ interface PoolOptions {
 }
 
 interface ExtendedWorker extends Worker {
-  _currentTask?: Task;
+  _currentTask?: Task<unknown>;
   _isIdle: boolean;
   _taskStartTime?: number;
 }
 
-interface WorkerMessage {
-  result?: any;
-  error?: string;
+type WorkerRegisteredMessage = {
+  type: 'function_registered';
   taskId?: string;
+  funcHash?: string;
+};
+
+type WorkerResultMessage = {
+  type: 'task_result';
+  taskId?: string;
+  result?: unknown;
+};
+
+type WorkerErrorMessage = {
+  type: 'task_error';
+  taskId?: string;
+  error?: string;
+};
+
+type WorkerMessage =
+  | WorkerRegisteredMessage
+  | WorkerResultMessage
+  | WorkerErrorMessage;
+
+type TaskOptions = {
+  timeout?: number;
+  maxRetries?: number;
+};
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
+}
+
+function isWorkerMessage(value: unknown): value is WorkerMessage {
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+
+  const type = value.type;
+  return (
+    type === 'function_registered' ||
+    type === 'task_result' ||
+    type === 'task_error'
+  );
+}
+
+function isTaskOptions(value: unknown): value is TaskOptions {
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+
+  const timeout = value.timeout;
+  const maxRetries = value.maxRetries;
+
+  if (timeout !== undefined && typeof timeout !== 'number') {
+    return false;
+  }
+
+  if (maxRetries !== undefined && typeof maxRetries !== 'number') {
+    return false;
+  }
+
+  return timeout !== undefined || maxRetries !== undefined;
 }
 
 @Injectable()
@@ -39,11 +99,12 @@ export class WorkerPool implements OnModuleDestroy {
   private maxPoolSize: number;
   private defaultTimeout: number;
   private defaultMaxRetries: number;
+  private timeoutCheckInterval: ReturnType<typeof setInterval> | null = null;
 
   private workers: ExtendedWorker[] = [];
   private idleWorkers: ExtendedWorker[] = [];
-  private taskQueue: Task[] = [];
-  private activeTasks = new Map<string, Task>();
+  private taskQueue: Task<unknown>[] = [];
+  private activeTasks = new Map<string, Task<unknown>>();
   private functionCache = new Map<string, string>();
 
   constructor(options: PoolOptions = {}) {
@@ -57,7 +118,7 @@ export class WorkerPool implements OnModuleDestroy {
     }
 
     // 定期检查超时任务
-    setInterval(() => this.checkTimeouts(), 5000);
+    this.timeoutCheckInterval = setInterval(() => this.checkTimeouts(), 5000);
     console.log('WorkerPool initialized with stats:', this.getStats());
   }
 
@@ -65,7 +126,7 @@ export class WorkerPool implements OnModuleDestroy {
     return crypto.randomBytes(8).toString('hex');
   }
 
-  private getFunctionHash(func: Function): string {
+  private getFunctionHash(func: WorkerTaskFunction<unknown>): string {
     return crypto.createHash('sha256').update(func.toString()).digest('hex');
   }
 
@@ -115,7 +176,7 @@ export class WorkerPool implements OnModuleDestroy {
     const worker = new Worker(workerCode, { eval: true }) as ExtendedWorker;
     worker._isIdle = true;
 
-    worker.on('message', (msg) => this.handleMessage(worker, msg));
+    worker.on('message', (msg: unknown) => this.handleMessage(worker, msg));
     worker.on('error', (err) => this.handleError(worker, err));
     worker.on('exit', () => this.handleExit(worker));
 
@@ -125,15 +186,25 @@ export class WorkerPool implements OnModuleDestroy {
     return worker;
   }
 
-  private handleMessage(worker: ExtendedWorker, msg: any) {
+  private handleMessage(worker: ExtendedWorker, msg: unknown): void {
+    if (!isWorkerMessage(msg)) {
+      return;
+    }
+
     if (msg.type === 'function_registered') {
+      const taskId = msg.taskId?.trim();
+      const funcHash = msg.funcHash?.trim();
+      if (!taskId || !funcHash) {
+        return;
+      }
+
       // 函数注册完成，执行任务
-      const task = this.activeTasks.get(msg.taskId);
-      if (task && worker._currentTask?.id === msg.taskId) {
+      const task = this.activeTasks.get(taskId);
+      if (task && worker._currentTask?.id === taskId) {
         worker.postMessage({
           type: 'execute_task',
-          taskId: msg.taskId,
-          funcHash: msg.funcHash,
+          taskId,
+          funcHash,
           args: task.args,
         });
       }
@@ -141,8 +212,13 @@ export class WorkerPool implements OnModuleDestroy {
     }
 
     if (msg.type === 'task_result' || msg.type === 'task_error') {
-      const task = this.activeTasks.get(msg.taskId);
-      if (!task || worker._currentTask?.id !== msg.taskId) return;
+      const taskId = msg.taskId?.trim();
+      if (!taskId) {
+        return;
+      }
+
+      const task = this.activeTasks.get(taskId);
+      if (!task || worker._currentTask?.id !== taskId) return;
 
       if (!task.fireAndForget) {
         if (msg.type === 'task_error') {
@@ -153,7 +229,8 @@ export class WorkerPool implements OnModuleDestroy {
           if (this.shouldRetry(task)) {
             this.retryTask(task);
           } else {
-            task.reject?.(new Error(msg.error));
+            const errorMessage = msg.error?.trim() || 'Worker execution failed';
+            task.reject?.(new Error(errorMessage));
           }
         } else {
           task.resolve?.(msg.result);
@@ -164,7 +241,7 @@ export class WorkerPool implements OnModuleDestroy {
     }
   }
 
-  private handleError(worker: ExtendedWorker, err: any) {
+  private handleError(worker: ExtendedWorker, err: Error): void {
     const task = worker._currentTask;
     const workerId = worker.threadId; // Capture workerId early
 
@@ -264,7 +341,7 @@ export class WorkerPool implements OnModuleDestroy {
       this.addWorker();
     }
 
-    worker.terminate().catch(() => {});
+    void worker.terminate().catch(() => {});
   }
 
   private checkTimeouts() {
@@ -305,7 +382,7 @@ export class WorkerPool implements OnModuleDestroy {
     }
   }
 
-  private async runNext() {
+  private runNext(): void {
     if (this.taskQueue.length === 0) return;
 
     // Attempt to get an idle worker
@@ -321,7 +398,9 @@ export class WorkerPool implements OnModuleDestroy {
       // A newly added worker might not be immediately ready, or if worker creation fails
       if (!worker) {
         // If we can't create a worker, schedule a retry after a short delay
-        setTimeout(() => this.runNext(), 100);
+        setTimeout(() => {
+          this.runNext();
+        }, 100);
         console.warn(
           'Failed to create a new worker, retrying runNext in 100ms. Pool stats:',
           this.getStats(),
@@ -333,7 +412,9 @@ export class WorkerPool implements OnModuleDestroy {
     // If still no worker (either maxPoolSize reached or worker creation failed/is delayed)
     if (!worker) {
       // Schedule a retry after a short delay to check for idle workers again
-      setTimeout(() => this.runNext(), 100);
+      setTimeout(() => {
+        this.runNext();
+      }, 100);
       console.warn(
         'No idle workers and maxPoolSize reached or worker creation delayed, retrying runNext in 100ms. Pool stats:',
         this.getStats(),
@@ -388,32 +469,25 @@ export class WorkerPool implements OnModuleDestroy {
     this.runNext();
   }
 
+  public run<T>(func: WorkerTaskFunction<T>, ...args: unknown[]): Promise<T>;
+
   public run<T>(
-    func: (...args: any[]) => T | Promise<T>,
-    ...args: any[]
+    func: WorkerTaskFunction<T>,
+    options: TaskOptions,
+    ...args: unknown[]
   ): Promise<T>;
 
   public run<T>(
-    func: (...args: any[]) => T | Promise<T>,
-    options: { timeout?: number; maxRetries?: number },
-    ...args: any[]
-  ): Promise<T>;
-
-  public run<T>(
-    func: (...args: any[]) => T | Promise<T>,
-    optionsOrFirstArg?: any,
-    ...args: any[]
+    func: WorkerTaskFunction<T>,
+    optionsOrFirstArg?: unknown,
+    ...args: unknown[]
   ): Promise<T> {
-    let taskOptions: { timeout?: number; maxRetries?: number } = {};
-    let taskArgs = args;
+    let taskOptions: TaskOptions = {};
+    let taskArgs: unknown[] = args;
 
-    if (
-      optionsOrFirstArg &&
-      typeof optionsOrFirstArg === 'object' &&
-      ('timeout' in optionsOrFirstArg || 'maxRetries' in optionsOrFirstArg)
-    ) {
+    if (isTaskOptions(optionsOrFirstArg)) {
       taskOptions = optionsOrFirstArg;
-    } else {
+    } else if (optionsOrFirstArg !== undefined) {
       taskArgs = [optionsOrFirstArg, ...args];
     }
 
@@ -434,29 +508,28 @@ export class WorkerPool implements OnModuleDestroy {
     });
   }
 
-  public fireAndForget(func: (...args: any[]) => any, ...args: any[]): void;
-
   public fireAndForget(
-    func: (...args: any[]) => any,
-    options: { timeout?: number; maxRetries?: number },
-    ...args: any[]
+    func: WorkerTaskFunction<unknown>,
+    ...args: unknown[]
   ): void;
 
   public fireAndForget(
-    func: (...args: any[]) => any,
-    optionsOrFirstArg?: any,
-    ...args: any[]
-  ): void {
-    let taskOptions: { timeout?: number; maxRetries?: number } = {};
-    let taskArgs = args;
+    func: WorkerTaskFunction<unknown>,
+    options: TaskOptions,
+    ...args: unknown[]
+  ): void;
 
-    if (
-      optionsOrFirstArg &&
-      typeof optionsOrFirstArg === 'object' &&
-      ('timeout' in optionsOrFirstArg || 'maxRetries' in optionsOrFirstArg)
-    ) {
+  public fireAndForget(
+    func: WorkerTaskFunction<unknown>,
+    optionsOrFirstArg?: unknown,
+    ...args: unknown[]
+  ): void {
+    let taskOptions: TaskOptions = {};
+    let taskArgs: unknown[] = args;
+
+    if (isTaskOptions(optionsOrFirstArg)) {
       taskOptions = optionsOrFirstArg;
-    } else {
+    } else if (optionsOrFirstArg !== undefined) {
       taskArgs = [optionsOrFirstArg, ...args];
     }
 
@@ -487,7 +560,10 @@ export class WorkerPool implements OnModuleDestroy {
 
   public async destroy() {
     // 清理超时检查间隔
-    clearInterval(this.checkTimeouts as any);
+    if (this.timeoutCheckInterval) {
+      clearInterval(this.timeoutCheckInterval);
+      this.timeoutCheckInterval = null;
+    }
 
     // 拒绝所有排队的任务
     for (const task of this.taskQueue) {

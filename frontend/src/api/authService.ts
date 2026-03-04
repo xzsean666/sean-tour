@@ -44,6 +44,9 @@ type AuthStateChangeResult = {
   error: Error | null;
 };
 
+const MIN_PASSWORD_LENGTH = 6;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function asError(error: unknown): Error {
   if (error instanceof Error) {
     return error;
@@ -54,6 +57,25 @@ function asError(error: unknown): Error {
   }
 
   return new Error('Unexpected authentication error.');
+}
+
+function failedResponse<TData>(message: string): Promise<ServiceResponse<TData>> {
+  return Promise.resolve({
+    data: null,
+    error: new Error(message),
+  });
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizePassword(password: string): string {
+  return password.trim();
+}
+
+function isValidEmail(email: string): boolean {
+  return EMAIL_PATTERN.test(email);
 }
 
 async function withClient<TData>(
@@ -91,10 +113,21 @@ export const authService = {
     email: string,
     password: string,
   ): Promise<ServiceResponse<SignInWithEmailData>> {
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPassword = normalizePassword(password);
+
+    if (!normalizedEmail || !normalizedPassword) {
+      return failedResponse('Email and password are required.');
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      return failedResponse('Please enter a valid email address.');
+    }
+
     return withClient<SignInWithEmailData>((client) =>
       client.auth.signInWithPassword({
-        email,
-        password,
+        email: normalizedEmail,
+        password: normalizedPassword,
       }),
     );
   },
@@ -103,10 +136,27 @@ export const authService = {
     email: string,
     password: string,
   ): Promise<ServiceResponse<SignUpWithEmailData>> {
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPassword = normalizePassword(password);
+
+    if (!normalizedEmail || !normalizedPassword) {
+      return failedResponse('Email and password are required.');
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      return failedResponse('Please enter a valid email address.');
+    }
+
+    if (normalizedPassword.length < MIN_PASSWORD_LENGTH) {
+      return failedResponse(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+      );
+    }
+
     return withClient<SignUpWithEmailData>((client) =>
       client.auth.signUp({
-        email,
-        password,
+        email: normalizedEmail,
+        password: normalizedPassword,
         options: {
           emailRedirectTo: getOAuthRedirectUrl(),
         },
@@ -128,17 +178,39 @@ export const authService = {
   sendPasswordResetEmail(
     email: string,
   ): Promise<ServiceResponse<SendPasswordResetData>> {
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedEmail) {
+      return failedResponse('Email is required.');
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      return failedResponse('Please enter a valid email address.');
+    }
+
     return withClient<SendPasswordResetData>((client) =>
-      client.auth.resetPasswordForEmail(email, {
+      client.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: getResetRedirectUrl(),
       }),
     );
   },
 
   updatePassword(newPassword: string): Promise<ServiceResponse<UpdatePasswordData>> {
+    const normalizedPassword = normalizePassword(newPassword);
+
+    if (!normalizedPassword) {
+      return failedResponse('New password is required.');
+    }
+
+    if (normalizedPassword.length < MIN_PASSWORD_LENGTH) {
+      return failedResponse(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+      );
+    }
+
     return withClient<UpdatePasswordData>((client) =>
       client.auth.updateUser({
-        password: newPassword,
+        password: normalizedPassword,
       }),
     );
   },

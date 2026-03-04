@@ -34,9 +34,15 @@ async function handleSignOut() {
 
       <nav class="nav-links">
         <RouterLink to="/">Services</RouterLink>
-        <RouterLink to="/orders">Orders</RouterLink>
-        <RouterLink to="/auth/login">Login</RouterLink>
-        <RouterLink to="/auth/register">Register</RouterLink>
+        <template v-if="user">
+          <RouterLink to="/orders">Orders</RouterLink>
+          <RouterLink to="/admin/services">Admin</RouterLink>
+          <RouterLink to="/admin/payments">Payments</RouterLink>
+        </template>
+        <template v-else>
+          <RouterLink to="/auth/login">Login</RouterLink>
+          <RouterLink to="/auth/register">Register</RouterLink>
+        </template>
       </nav>
 
       <div class="session-block">

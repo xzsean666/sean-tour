@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DBService, PGKVDatabase } from '../common/db.service';
+import { DeleteServiceInput } from './dto/delete-service.input';
+import { ServiceAuditAction } from './dto/service-audit-action.enum';
+import { ServiceAuditListInput } from './dto/service-audit-list.input';
+import { ServiceAuditLog } from './dto/service-audit-log.dto';
+import { ServiceAuditPage } from './dto/service-audit-page.dto';
+import { SetServiceStatusInput } from './dto/set-service-status.input';
 import { ServiceListInput } from './dto/service-list.input';
 import { ServicePage } from './dto/service-page.dto';
 import { ServiceType } from './dto/service-type.enum';
@@ -40,6 +46,25 @@ type CatalogServiceRecord = {
   status: string;
   detail: ServiceDetailRecord;
   updatedAt: string;
+};
+
+type ServiceAuditRecord = {
+  entityType: 'SERVICE_AUDIT';
+  id: string;
+  serviceId: string;
+  action: ServiceAuditAction;
+  beforeStatus?: string;
+  afterStatus?: string;
+  note?: string;
+  actor: string;
+  createdAt: string;
+};
+
+type SearchJsonRow = {
+  key: string;
+  value: unknown;
+  created_at?: Date;
+  updated_at?: Date;
 };
 
 const CATALOG_SEED: CatalogServiceRecord[] = [
@@ -195,6 +220,12 @@ export class CatalogService implements OnModuleInit {
     await this.ensureSeedData();
 
     const id = input.id?.trim() || this.generateServiceId(input.type);
+    const existing = await this.getServiceRecordIfExists(id);
+    const images =
+      input.images !== undefined
+        ? this.normalizeStringArray(input.images)
+        : existing?.images || [];
+
     const record: CatalogServiceRecord = {
       entityType: 'SERVICE',
       id,
@@ -202,19 +233,140 @@ export class CatalogService implements OnModuleInit {
       title: this.requireText(input.title, 'title'),
       city: this.requireText(input.city, 'city'),
       description: this.requireText(input.description, 'description'),
-      images: this.normalizeStringArray(input.images),
+      images,
       languages: this.requireStringArray(input.languages, 'languages'),
       basePrice: {
         amount: this.normalizeAmount(input.basePriceAmount),
         currency: 'USDT',
       },
       status: this.requireText(input.status || 'ACTIVE', 'status'),
-      detail: this.buildDetail(input),
+      detail: this.buildDetail(input, existing),
       updatedAt: new Date().toISOString(),
     };
 
     await this.travelDB.put(`service:${record.id}`, record);
+    await this.logAudit({
+      serviceId: record.id,
+      action: ServiceAuditAction.UPSERT,
+      beforeStatus: existing?.status,
+      afterStatus: record.status,
+      note: existing ? 'Updated service' : 'Created service',
+    });
     return this.toServiceItem(record);
+  }
+
+  async setServiceStatus(input: SetServiceStatusInput): Promise<ServiceItem> {
+    await this.ensureSeedData();
+
+    const record = await this.getServiceOrThrow(input.id);
+    const nextStatus = this.requireText(input.status, 'status');
+
+    if (record.status === nextStatus) {
+      return this.toServiceItem(record);
+    }
+
+    const updated: CatalogServiceRecord = {
+      ...record,
+      status: nextStatus,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service:${record.id}`, updated);
+    await this.logAudit({
+      serviceId: updated.id,
+      action: ServiceAuditAction.STATUS_CHANGE,
+      beforeStatus: record.status,
+      afterStatus: updated.status,
+      note: 'Admin status update',
+    });
+    return this.toServiceItem(updated);
+  }
+
+  async deleteService(input: DeleteServiceInput): Promise<boolean> {
+    await this.ensureSeedData();
+
+    const record = await this.getServiceOrThrow(input.id);
+
+    if (input.hardDelete) {
+      const deleted = await this.travelDB.delete(`service:${record.id}`);
+      if (!deleted) {
+        return false;
+      }
+
+      await this.logAudit({
+        serviceId: record.id,
+        action: ServiceAuditAction.DELETE,
+        beforeStatus: record.status,
+        afterStatus: undefined,
+        note: 'Hard delete',
+      });
+      return true;
+    }
+
+    if (record.status === 'DELETED') {
+      return true;
+    }
+
+    const updated: CatalogServiceRecord = {
+      ...record,
+      status: 'DELETED',
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service:${record.id}`, updated);
+    await this.logAudit({
+      serviceId: record.id,
+      action: ServiceAuditAction.DELETE,
+      beforeStatus: record.status,
+      afterStatus: updated.status,
+      note: 'Soft delete',
+    });
+    return true;
+  }
+
+  async listServiceAuditLogs(
+    input?: ServiceAuditListInput,
+  ): Promise<ServiceAuditPage> {
+    await this.ensureSeedData();
+
+    const limit = Math.min(Math.max(input?.page?.limit ?? 20, 1), 100);
+    const offset = Math.max(input?.page?.offset ?? 0, 0);
+
+    const contains: Record<string, unknown> = {
+      entityType: 'SERVICE_AUDIT',
+    };
+
+    if (input?.serviceId?.trim()) {
+      contains.serviceId = input.serviceId.trim();
+    }
+
+    if (input?.action) {
+      contains.action = input.action;
+    }
+
+    const result = await this.travelDB.searchJson({
+      contains,
+      limit,
+      offset,
+      include_total: true,
+      order_by: 'DESC',
+      order_by_field: 'created_at',
+    });
+
+    const items = (result.data as SearchJsonRow[])
+      .map((row) => this.toServiceAuditRecord(row.value))
+      .filter((value): value is ServiceAuditRecord => value !== null)
+      .map((record) => this.toServiceAuditLog(record));
+
+    const total = result.total ?? items.length;
+
+    return {
+      items,
+      total,
+      limit,
+      offset,
+      hasMore: offset + items.length < total,
+    };
   }
 
   async getServiceOrThrow(id: string): Promise<CatalogServiceRecord> {
@@ -230,6 +382,15 @@ export class CatalogService implements OnModuleInit {
     }
 
     return normalized;
+  }
+
+  private async getServiceRecordIfExists(
+    id: string,
+  ): Promise<CatalogServiceRecord | null> {
+    const value = await this.travelDB.get<CatalogServiceRecord>(
+      `service:${id}`,
+    );
+    return this.toServiceRecord(value);
   }
 
   private async ensureSeedData(): Promise<void> {
@@ -304,6 +465,7 @@ export class CatalogService implements OnModuleInit {
       city: service.city,
       description: service.description,
       coverImage: service.images[0],
+      images: service.images,
       languages: service.languages,
       basePrice: service.basePrice,
       status: service.status,
@@ -311,8 +473,55 @@ export class CatalogService implements OnModuleInit {
     };
   }
 
-  private buildDetail(input: UpsertServiceInput): ServiceDetailRecord {
+  private toServiceAuditRecord(value: unknown): ServiceAuditRecord | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const candidate = value as Partial<ServiceAuditRecord>;
+    if (candidate.entityType !== 'SERVICE_AUDIT') {
+      return null;
+    }
+
+    if (
+      typeof candidate.id !== 'string' ||
+      typeof candidate.serviceId !== 'string' ||
+      typeof candidate.action !== 'string' ||
+      typeof candidate.actor !== 'string' ||
+      typeof candidate.createdAt !== 'string'
+    ) {
+      return null;
+    }
+
+    return candidate as ServiceAuditRecord;
+  }
+
+  private toServiceAuditLog(record: ServiceAuditRecord): ServiceAuditLog {
+    return {
+      id: record.id,
+      serviceId: record.serviceId,
+      action: record.action,
+      beforeStatus: record.beforeStatus,
+      afterStatus: record.afterStatus,
+      note: record.note,
+      actor: record.actor,
+      createdAt: record.createdAt,
+    };
+  }
+
+  private buildDetail(
+    input: UpsertServiceInput,
+    existing: CatalogServiceRecord | null,
+  ): ServiceDetailRecord {
     if (input.type === ServiceType.PACKAGE) {
+      if (
+        !input.packageDetail &&
+        existing?.type === ServiceType.PACKAGE &&
+        existing.detail.__typename === 'PackageServiceDetail'
+      ) {
+        return existing.detail;
+      }
+
       if (!input.packageDetail) {
         throw new BadRequestException(
           'packageDetail is required for PACKAGE service',
@@ -339,6 +548,14 @@ export class CatalogService implements OnModuleInit {
     }
 
     if (input.type === ServiceType.GUIDE) {
+      if (
+        !input.guideDetail &&
+        existing?.type === ServiceType.GUIDE &&
+        existing.detail.__typename === 'GuideServiceDetail'
+      ) {
+        return existing.detail;
+      }
+
       if (!input.guideDetail) {
         throw new BadRequestException(
           'guideDetail is required for GUIDE service',
@@ -369,6 +586,14 @@ export class CatalogService implements OnModuleInit {
     }
 
     if (input.type === ServiceType.CAR) {
+      if (
+        !input.carDetail &&
+        existing?.type === ServiceType.CAR &&
+        existing.detail.__typename === 'CarServiceDetail'
+      ) {
+        return existing.detail;
+      }
+
       if (!input.carDetail) {
         throw new BadRequestException('carDetail is required for CAR service');
       }
@@ -388,6 +613,14 @@ export class CatalogService implements OnModuleInit {
         carType: this.requireText(input.carDetail.carType, 'carDetail.carType'),
         luggageCapacity: input.carDetail.luggageCapacity?.trim() || undefined,
       };
+    }
+
+    if (
+      !input.assistantDetail &&
+      existing?.type === ServiceType.ASSISTANT &&
+      existing.detail.__typename === 'AssistantServiceDetail'
+    ) {
+      return existing.detail;
     }
 
     if (!input.assistantDetail) {
@@ -447,6 +680,29 @@ export class CatalogService implements OnModuleInit {
     }
 
     return Number(value.toFixed(2));
+  }
+
+  private async logAudit(params: {
+    serviceId: string;
+    action: ServiceAuditAction;
+    beforeStatus?: string;
+    afterStatus?: string;
+    note?: string;
+  }): Promise<void> {
+    const id = `audit_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+    const auditRecord: ServiceAuditRecord = {
+      entityType: 'SERVICE_AUDIT',
+      id,
+      serviceId: params.serviceId,
+      action: params.action,
+      beforeStatus: params.beforeStatus,
+      afterStatus: params.afterStatus,
+      note: params.note,
+      actor: 'admin_auth_code',
+      createdAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service_audit:${id}`, auditRecord);
   }
 
   private generateServiceId(type: ServiceType): string {

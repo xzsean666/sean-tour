@@ -3,6 +3,11 @@ import { DBService, PGKVDatabase } from '../common/db.service';
 import { OTPUtils, JWTHelper, CryptoHelper } from '../helpers/sdk';
 import { config } from '../config';
 
+type UserOTPRecord = {
+  secret: string;
+  isActive: boolean;
+};
+
 @Injectable()
 export class OTPService {
   protected readonly dbService: DBService;
@@ -23,9 +28,9 @@ export class OTPService {
   decodeSecret(secret: string) {
     return CryptoHelper.decryptAES(secret, config.auth.JWT_SECRET);
   }
-  async generateOTP(username: string, inviteCode: string) {
-    const userOTP = await this.userOTPDB.get(username);
-    if (userOTP && userOTP.isActive) {
+  async generateOTP(username: string) {
+    const userOTP = await this.getUserOtpRecord(username);
+    if (userOTP?.isActive) {
       throw new Error('User already has OTP');
     }
 
@@ -43,7 +48,7 @@ export class OTPService {
     };
   }
   async registerOTP(username: string, token: string) {
-    const userOTP = await this.userOTPDB.get(username);
+    const userOTP = await this.getUserOtpRecord(username);
     if (!userOTP) {
       throw new Error('User not found');
     }
@@ -52,7 +57,7 @@ export class OTPService {
     if (!isValid) {
       throw new Error('Invalid OTP');
     }
-    if (userOTP && userOTP.isActive) {
+    if (userOTP.isActive) {
       throw new Error('User already has OTP');
     }
     await this.userOTPDB.merge(username, {
@@ -61,7 +66,7 @@ export class OTPService {
     return true;
   }
   async loginOTP(username: string, token: string) {
-    const userOTP = await this.userOTPDB.get(username);
+    const userOTP = await this.getUserOtpRecord(username);
     if (!userOTP) {
       throw new Error('User not found');
     }
@@ -89,5 +94,31 @@ export class OTPService {
     } catch {
       throw new Error('Invalid access token');
     }
+  }
+
+  private async getUserOtpRecord(
+    username: string,
+  ): Promise<UserOTPRecord | null> {
+    const record = await this.userOTPDB.get<unknown>(username);
+    return this.toUserOtpRecord(record);
+  }
+
+  private toUserOtpRecord(value: unknown): UserOTPRecord | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const candidate = value as Partial<UserOTPRecord>;
+    if (
+      typeof candidate.secret !== 'string' ||
+      typeof candidate.isActive !== 'boolean'
+    ) {
+      return null;
+    }
+
+    return {
+      secret: candidate.secret,
+      isActive: candidate.isActive,
+    };
   }
 }

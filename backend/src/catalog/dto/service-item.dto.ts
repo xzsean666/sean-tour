@@ -23,6 +23,9 @@ export class ServiceItem {
   coverImage?: string;
 
   @Field(() => [String])
+  images: string[];
+
+  @Field(() => [String])
   languages: string[];
 
   @Field(() => PriceDto)

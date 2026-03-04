@@ -62,9 +62,34 @@ interface PaymentEvent {
 interface BatchBalanceResult {
   target: string;
   success: boolean;
-  decodedData: any;
+  decodedData: ethers.Result | string | null;
   function: string;
-  args: any[];
+  args: unknown[];
+}
+
+interface WalletPoolValue {
+  index: number | string;
+}
+
+interface WalletPoolRecord {
+  key: string;
+  value: WalletPoolValue;
+}
+
+interface SearchOrderRecord {
+  key: string;
+  value: PaymentOrder;
+}
+
+interface ContractTransferEvent {
+  args?: {
+    from?: string;
+    to?: string;
+    value?: ethers.BigNumberish;
+  };
+  transactionHash: string;
+  blockNumber: number;
+  index: number;
 }
 
 class Web3Wallet {
@@ -125,6 +150,40 @@ class Web3Wallet {
     return `${this.config.chainId}_${this.config.tokenAddress}_wallet_${table}`;
   }
 
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
+  }
+
+  private getTransactionHash(
+    tx: ethers.TransactionResponse | ethers.TransactionReceipt,
+  ): string {
+    if ('hash' in tx && typeof tx.hash === 'string') {
+      return tx.hash;
+    }
+    if ('transactionHash' in tx && typeof tx.transactionHash === 'string') {
+      return tx.transactionHash;
+    }
+    return '';
+  }
+
+  private extractDecodedBalance(
+    decodedData: BatchBalanceResult['decodedData'],
+  ): bigint {
+    if (Array.isArray(decodedData) && decodedData.length > 0) {
+      const [rawBalance] = decodedData;
+      if (typeof rawBalance === 'bigint') {
+        return rawBalance;
+      }
+      if (typeof rawBalance === 'number' || typeof rawBalance === 'string') {
+        return BigInt(rawBalance);
+      }
+    }
+    return 0n;
+  }
+
   /**
    * HD 钱包派生（替代旧 EthersUtils.getDeriveWallets）
    * @param index 派生路径索引
@@ -159,17 +218,15 @@ class Web3Wallet {
     return new Promise<number>((resolve, reject) => {
       this.walletIndexLock = this.walletIndexLock.then(async () => {
         try {
-          const lastIndex = await this.metadata_db.get('last_wallet_index');
-          const nextIndex = lastIndex
-            ? parseInt(lastIndex as string) + 1
-            : 0;
-          await this.metadata_db.put(
-            'last_wallet_index',
-            nextIndex.toString(),
-          );
+          const lastIndex =
+            await this.metadata_db.get<string>('last_wallet_index');
+          const nextIndex = lastIndex ? parseInt(lastIndex, 10) + 1 : 0;
+          await this.metadata_db.put('last_wallet_index', nextIndex.toString());
           resolve(nextIndex);
         } catch (err) {
-          reject(err);
+          reject(
+            err instanceof Error ? err : new Error(this.getErrorMessage(err)),
+          );
         }
       });
     });
@@ -179,14 +236,16 @@ class Web3Wallet {
    * 获取一个可用的钱包地址（优先从钱包池取，否则派生新钱包）
    * 自动跳过有意外余额的钱包，最多重试 maxRetries 次
    */
-  async getWallet(maxRetries: number = 10): Promise<{ address: string; index: number }> {
+  async getWallet(
+    maxRetries: number = 10,
+  ): Promise<{ address: string; index: number }> {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       // 1. 优先从钱包池中取
-      const wallet = await this.wallet_db.db.findOne({
+      const wallet = (await this.wallet_db.db.findOne({
         order: {
           created_at: 'asc',
         },
-      });
+      })) as WalletPoolRecord | null;
 
       if (wallet) {
         const balance = await this.queryTokenBalance(wallet.key);
@@ -199,7 +258,7 @@ class Web3Wallet {
         await this.wallet_db.delete(wallet.key);
         return {
           address: wallet.key,
-          index: parseInt(wallet.value.index),
+          index: parseInt(String(wallet.value.index), 10),
         };
       }
 
@@ -268,7 +327,7 @@ class Web3Wallet {
     });
 
     // 先检查是否已存在（已归档），避免重复下单
-    const isExist = await this.archived_orders_db.get(orderHash);
+    const isExist = await this.archived_orders_db.get<PaymentOrder>(orderHash);
     if (isExist) {
       throw new Error('OrderId already exists, please try again');
     }
@@ -296,12 +355,11 @@ class Web3Wallet {
    * @returns 订单状态字符串
    */
   async queryOrderStatus(orderHash: string): Promise<string> {
-    const order = (await this.orders_db.get(orderHash)) as PaymentOrder | null;
+    const order = await this.orders_db.get<PaymentOrder>(orderHash);
     if (!order) {
       // 在归档中查找
-      const archivedOrder = (await this.archived_orders_db.get(
-        orderHash,
-      )) as PaymentOrder | null;
+      const archivedOrder =
+        await this.archived_orders_db.get<PaymentOrder>(orderHash);
       if (archivedOrder) return archivedOrder.status;
       return OrderStatus.EXPIRED;
     }
@@ -318,11 +376,10 @@ class Web3Wallet {
    * 查询订单详情（优先查活跃订单，其次查归档订单）
    */
   async queryOrder(orderHash: string): Promise<PaymentOrder> {
-    const order = (await this.orders_db.get(orderHash)) as PaymentOrder | null;
+    const order = await this.orders_db.get<PaymentOrder>(orderHash);
     if (!order) {
-      const archivedOrder = (await this.archived_orders_db.get(
-        orderHash,
-      )) as PaymentOrder | null;
+      const archivedOrder =
+        await this.archived_orders_db.get<PaymentOrder>(orderHash);
       if (!archivedOrder) throw new Error('Order not found');
       return archivedOrder;
     }
@@ -340,8 +397,10 @@ class Web3Wallet {
     try {
       await this.archived_orders_db.put(orderHash, order);
       await this.orders_db.delete(orderHash);
-    } catch (error: any) {
-      console.error(`归档订单失败 (${orderHash}): ${error.message}`);
+    } catch (error) {
+      console.error(
+        `归档订单失败 (${orderHash}): ${this.getErrorMessage(error)}`,
+      );
     }
   }
 
@@ -350,9 +409,7 @@ class Web3Wallet {
    * @param addresses 钱包地址数组
    * @returns 余额信息数组
    */
-  async batchQueryBalances(
-    addresses: string[],
-  ): Promise<BatchBalanceResult[]> {
+  async batchQueryBalances(addresses: string[]): Promise<BatchBalanceResult[]> {
     const calls = addresses.map((address) =>
       this.web3.encodeDataByABI({
         target: this.config.tokenAddress,
@@ -374,9 +431,10 @@ class Web3Wallet {
     newPayments: PaymentEvent[];
   }> {
     // 使用 searchJson 按 status 查询，避免全量加载所有订单
-    const { data: pendingRecords } = await this.orders_db.searchJson({
+    const searchResult = await this.orders_db.searchJson({
       contains: { status: OrderStatus.PENDING },
     });
+    const pendingRecords = searchResult.data as SearchOrderRecord[];
 
     const now = Date.now();
 
@@ -385,8 +443,8 @@ class Web3Wallet {
     const expiredOrders: Array<{ hash: string; order: PaymentOrder }> = [];
 
     for (const record of pendingRecords) {
-      const order = record.value as PaymentOrder;
-      const hash = record.key as string;
+      const order = record.value;
+      const hash = record.key;
       if (now < order.expiresAt) {
         pendingOrders.push({ hash, order });
       } else {
@@ -425,8 +483,9 @@ class Web3Wallet {
         if (!balanceResult || !balanceResult.success) continue;
 
         // decodedData 是 ethers Result，取第一个元素即为 balance bigint
-        const currentBalance: bigint =
-          balanceResult.decodedData?.[0] ?? 0n;
+        const currentBalance = this.extractDecodedBalance(
+          balanceResult.decodedData,
+        );
         const currentBalanceStr = currentBalance.toString();
 
         if (currentBalanceStr === order.receivedAmount) continue;
@@ -509,14 +568,25 @@ class Web3Wallet {
       },
     });
 
-    return events
-      .filter((event) => event.args != null)
+    const normalizedEvents = events as ContractTransferEvent[];
+    return normalizedEvents
+      .filter(
+        (
+          event,
+        ): event is ContractTransferEvent & {
+          args: { from: string; to: string; value: ethers.BigNumberish };
+        } =>
+          event.args != null &&
+          typeof event.args.from === 'string' &&
+          typeof event.args.to === 'string' &&
+          event.args.value !== undefined,
+      )
       .map((event) => ({
-        from: event.args!.from,
-        to: event.args!.to,
-        amount: event.args!.value.toString(),
+        from: event.args.from,
+        to: event.args.to,
+        amount: String(event.args.value),
         formattedAmount: ethers.formatUnits(
-          event.args!.value,
+          event.args.value,
           this.tokenDecimals,
         ),
         transactionHash: event.transactionHash,
@@ -570,12 +640,12 @@ class Web3Wallet {
     for (let i = 0; i < balances.length; i++) {
       const result = balances[i];
       if (!result || !result.success) continue;
-      const balance: bigint = result.decodedData?.[0] ?? 0n;
+      const balance = this.extractDecodedBalance(result.decodedData);
       if (balance > minAmountBN) {
         walletsToCollect.push({
-          address: walletAddresses[i]!,
+          address: walletAddresses[i],
           balance,
-          index: walletIndices[i]!,
+          index: walletIndices[i],
         });
       }
     }
@@ -605,13 +675,13 @@ class Web3Wallet {
         return {
           fromAddress: walletInfo.address,
           amount: walletInfo.balance.toString(),
-          transactionHash: tx.hash,
+          transactionHash: this.getTransactionHash(tx),
         };
-      } catch (error: any) {
+      } catch (error) {
         return {
           fromAddress: walletInfo.address,
           amount: walletInfo.balance.toString(),
-          error: error.message,
+          error: this.getErrorMessage(error),
         };
       }
     });
@@ -647,7 +717,7 @@ class Web3Wallet {
    * @param orderHash 订单 Hash
    */
   async cancelOrder(orderHash: string): Promise<boolean> {
-    const order = (await this.orders_db.get(orderHash)) as PaymentOrder | null;
+    const order = await this.orders_db.get<PaymentOrder>(orderHash);
     if (!order) return false;
 
     if (
@@ -675,8 +745,8 @@ class Web3Wallet {
     formattedTotalReceived: string;
   }> {
     const [activeOrders, archivedOrders] = await Promise.all([
-      this.orders_db.getAll(),
-      this.archived_orders_db.getAll(),
+      this.orders_db.getAll<PaymentOrder>(),
+      this.archived_orders_db.getAll<PaymentOrder>(),
     ]);
 
     // 合并活跃和归档订单
@@ -746,10 +816,10 @@ class Web3Wallet {
     const includeArchived = options.includeArchived ?? true;
 
     const [activeOrders, archivedOrders] = await Promise.all([
-      this.orders_db.getAll(),
+      this.orders_db.getAll<PaymentOrder>(),
       includeArchived
-        ? this.archived_orders_db.getAll()
-        : Promise.resolve({}),
+        ? this.archived_orders_db.getAll<PaymentOrder>()
+        : Promise.resolve<Record<string, PaymentOrder>>({}),
     ]);
 
     let orders = [

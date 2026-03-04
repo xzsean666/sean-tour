@@ -1,17 +1,38 @@
 // logger.service.ts
 import { LoggerService } from '@nestjs/common';
-import { createLogger, format, transports } from 'winston';
+import {
+  createLogger,
+  format,
+  transports,
+  type Logger,
+  type transport,
+} from 'winston';
 import GelfTransport from 'winston-gelf';
 import { config } from '../config/index';
 
 console.log('config.PROJECT_NAME', config.PROJECT_NAME);
 
 export class CommonLogger implements LoggerService {
-  private logger;
+  private logger: Logger;
 
   constructor() {
+    const GraylogTransport = GelfTransport as unknown as new (options: {
+      gelfPro: {
+        fields: {
+          facility: string;
+        };
+        adapterName: 'udp';
+        adapterOptions: {
+          host: string;
+          port: number;
+        };
+        environment: string;
+        version: string;
+      };
+    }) => transport;
+
     // 基础传输：本地文件
-    const logTransports = [
+    const logTransports: transport[] = [
       new transports.File({
         filename: 'logs/error.log',
         level: 'error', // 只保存 error 级别
@@ -24,22 +45,22 @@ export class CommonLogger implements LoggerService {
     // 如果配置了 Graylog，则添加 Graylog 传输
     if (config.GRAYLOG_HOST) {
       console.log('Graylog configured, adding Graylog transport');
-      logTransports.push(
-        new GelfTransport({
-          gelfPro: {
-            fields: {
-              facility: `${config.PROJECT_NAME ?? ''}${config.PUBLIC_IP ? `_${config.PUBLIC_IP}` : ''}`,
-            }, // 自定义来源
-            adapterName: 'udp',
-            adapterOptions: {
-              host: config.GRAYLOG_HOST, // Graylog server
-              port: config.GRAYLOG_PORT, // Graylog GELF UDP 输入端口
-            },
-            environment: config.NODE_ENV,
-            version: '1.0',
+      const graylogTransport = new GraylogTransport({
+        gelfPro: {
+          fields: {
+            facility: `${config.PROJECT_NAME ?? ''}${config.PUBLIC_IP ? `_${config.PUBLIC_IP}` : ''}`,
+          }, // 自定义来源
+          adapterName: 'udp',
+          adapterOptions: {
+            host: config.GRAYLOG_HOST, // Graylog server
+            port: config.GRAYLOG_PORT, // Graylog GELF UDP 输入端口
           },
-        }),
-      );
+          environment: config.NODE_ENV,
+          version: '1.0',
+        },
+      }) as unknown as transport;
+
+      logTransports.push(graylogTransport);
     } else {
       console.log('Graylog not configured, using local logging only');
     }

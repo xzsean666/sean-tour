@@ -1,12 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import 'reflect-metadata';
-import 'reflect-metadata';
-import { DataSource, Repository, Table, In, MoreThan, Like, EntitySchema } from 'typeorm';
 import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
+  DataSource,
+  Repository,
+  Table,
+  In,
+  MoreThan,
+  EntitySchema,
 } from 'typeorm';
 
 // 支持的数据类型枚举
@@ -149,7 +149,8 @@ export class SqliteKVDatabase {
       } catch (error: any) {
         if (error.message.includes('SQLITE_BUSY') && i < retries - 1) {
           console.warn(
-            `SQLITE_BUSY encountered for ${this.table_name}, retrying in ${delay_ms}ms... (Attempt ${i + 1
+            `SQLITE_BUSY encountered for ${this.table_name}, retrying in ${delay_ms}ms... (Attempt ${
+              i + 1
             }/${retries})`,
           );
           await new Promise((resolve) => setTimeout(resolve, delay_ms));
@@ -257,9 +258,9 @@ export class SqliteKVDatabase {
     options_or_expire?:
       | number
       | {
-        expire?: number;
-        include_timestamps?: boolean;
-      },
+          expire?: number;
+          include_timestamps?: boolean;
+        },
   ): Promise<T | { value: T; created_at: Date; updated_at: Date } | null> {
     await this.ensureInitialized();
     const record = await this.db.findOne({ where: { key } });
@@ -485,10 +486,10 @@ export class SqliteKVDatabase {
         const deserialized = this.type_handler.deserialize(record.value) as T;
         acc[record.key] = include_timestamps
           ? {
-            value: deserialized,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-          }
+              value: deserialized,
+              created_at: record.created_at,
+              updated_at: record.updated_at,
+            }
           : deserialized;
         return acc;
       },
@@ -559,10 +560,10 @@ export class SqliteKVDatabase {
           record.key,
           include_timestamps
             ? {
-              value: deserialized,
-              created_at: record.created_at,
-              updated_at: record.updated_at,
-            }
+                value: deserialized,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+              }
             : deserialized,
         );
       } catch (deserialize_error: any) {
@@ -612,10 +613,10 @@ export class SqliteKVDatabase {
         const deserialized = this.type_handler.deserialize(record.value) as T;
         acc[record.key] = include_timestamps
           ? {
-            value: deserialized,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-          }
+              value: deserialized,
+              created_at: record.created_at,
+              updated_at: record.updated_at,
+            }
           : deserialized;
         return acc;
       },
@@ -830,15 +831,13 @@ export class SqliteKVDatabase {
             updated_at: Date;
           },
         ) => {
-          const deserialized = this.type_handler.deserialize(
-            record.value,
-          ) as T;
+          const deserialized = this.type_handler.deserialize(record.value) as T;
           acc[record.key] = include_timestamps
             ? {
-              value: deserialized,
-              created_at: record.created_at,
-              updated_at: record.updated_at,
-            }
+                value: deserialized,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+              }
             : deserialized;
           return acc;
         },

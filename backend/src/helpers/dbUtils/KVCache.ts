@@ -117,6 +117,43 @@ export class AsyncLockManager {
 // 全局锁管理器
 const global_lock_manager = new AsyncLockManager();
 
+type CacheableMethod = (...args: unknown[]) => unknown;
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
+}
+
+function isAsyncMethod(method: CacheableMethod): boolean {
+  const constructorName = (method as { constructor?: { name?: string } })
+    .constructor?.name;
+  const toStringTag = (method as { [Symbol.toStringTag]?: unknown })[
+    Symbol.toStringTag
+  ];
+
+  return constructorName === 'AsyncFunction' || toStringTag === 'AsyncFunction';
+}
+
+function invokeMethod<TResult>(
+  method: CacheableMethod,
+  thisArg: unknown,
+  args: unknown[],
+): TResult {
+  return method.apply(thisArg, args) as TResult;
+}
+
+function getTargetName(target: unknown): string {
+  if (!isObjectRecord(target)) {
+    return 'Anonymous';
+  }
+
+  const constructor = (target as { constructor?: { name?: unknown } })
+    .constructor;
+  const constructorName = constructor?.name;
+  return typeof constructorName === 'string' && constructorName.trim()
+    ? constructorName
+    : 'Anonymous';
+}
+
 /**
  * 缓存装饰器选项
  */
@@ -154,7 +191,7 @@ export interface CacheOptions {
  * }
  * ```
  */
-export function createCacheDecorator<T = any>(
+export function createCacheDecorator<T = unknown>(
   db: IKVDatabase<T>,
   default_ttl: number = 60,
   default_use_lock: boolean = true,
@@ -169,21 +206,23 @@ export function createCacheDecorator<T = any>(
     } = options;
 
     return function (
-      target: any,
+      target: unknown,
       property_key: string,
       descriptor: PropertyDescriptor,
     ) {
-      const original_method = descriptor.value;
-      const func_name = `${target.constructor?.name || 'Anonymous'}.${property_key}`;
+      if (typeof descriptor.value !== 'function') {
+        return descriptor;
+      }
+
+      const original_method = descriptor.value as CacheableMethod;
+      const func_name = `${getTargetName(target)}.${property_key}`;
 
       // 检测是否为异步函数
-      const is_async =
-        original_method.constructor.name === 'AsyncFunction' ||
-        original_method[Symbol.toStringTag] === 'AsyncFunction';
+      const is_async = isAsyncMethod(original_method);
 
       if (is_async && use_lock) {
         // 异步函数 + 锁：防止并发重复计算
-        descriptor.value = async function (...args: any[]): Promise<T> {
+        descriptor.value = async function (...args: unknown[]): Promise<T> {
           const cache_key = makeCacheKey(func_name, prefix, args);
 
           // 快速路径：先检查缓存（无锁）
@@ -211,7 +250,11 @@ export function createCacheDecorator<T = any>(
             }
 
             // 执行原始方法
-            const result = await original_method.apply(this, args);
+            const result = await invokeMethod<Promise<T>>(
+              original_method,
+              this,
+              args,
+            );
 
             // 存入缓存
             try {
@@ -228,7 +271,7 @@ export function createCacheDecorator<T = any>(
         };
       } else if (is_async) {
         // 异步函数（无锁）
-        descriptor.value = async function (...args: any[]): Promise<T> {
+        descriptor.value = async function (...args: unknown[]): Promise<T> {
           const cache_key = makeCacheKey(func_name, prefix, args);
 
           try {
@@ -240,7 +283,11 @@ export function createCacheDecorator<T = any>(
             // 缓存读取失败，继续执行
           }
 
-          const result = await original_method.apply(this, args);
+          const result = await invokeMethod<Promise<T>>(
+            original_method,
+            this,
+            args,
+          );
 
           try {
             await db.put(cache_key, result);
@@ -253,7 +300,7 @@ export function createCacheDecorator<T = any>(
       } else {
         // 同步函数（无需锁，本身是阻塞的）
         // 注意：由于 db.get/put 是异步的，这里需要返回 Promise
-        descriptor.value = async function (...args: any[]): Promise<T> {
+        descriptor.value = async function (...args: unknown[]): Promise<T> {
           const cache_key = makeCacheKey(func_name, prefix, args);
 
           try {
@@ -265,7 +312,7 @@ export function createCacheDecorator<T = any>(
             // 缓存读取失败，继续执行
           }
 
-          const result = original_method.apply(this, args);
+          const result = invokeMethod<T>(original_method, this, args);
 
           try {
             await db.put(cache_key, result);

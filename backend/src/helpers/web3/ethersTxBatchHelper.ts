@@ -2,45 +2,82 @@ import { EthersTxHelper } from './ethersTxHelper';
 
 import { ethers } from 'ethers';
 
+interface EthersTxBatchHelperConfig {
+  private_key?: string;
+  batch_call_address?: string;
+}
+
+interface BatchContractCall {
+  target: string;
+  data: string;
+  abi: ethers.InterfaceAbi;
+  function_name: string;
+  execute_args: unknown[];
+}
+
+interface BatchStaticCallResult {
+  target: string;
+  success: boolean;
+  decodedData: ethers.Result | string | null;
+  function: string;
+  args: unknown[];
+}
+
+interface BatchWriteCallResult {
+  target: string;
+  success: boolean;
+  transactionHash: string;
+  function: string;
+  args: unknown[];
+}
+
 export class EthersTxBatchHelper extends EthersTxHelper {
   public batch_call_address?: string;
 
   constructor(
     NODE_PROVIDER: string | ethers.BrowserProvider | ethers.JsonRpcProvider,
-    config?: any,
+    config?: EthersTxBatchHelperConfig,
   ) {
     super(NODE_PROVIDER, config);
     this.batch_call_address = config?.batch_call_address;
   }
 
-  async deployBatchCallContract(): Promise<any> {
+  private formatErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
+  }
+
+  private getTransactionHash(
+    tx: ethers.TransactionResponse | ethers.TransactionReceipt,
+  ): string {
+    if ('hash' in tx && typeof tx.hash === 'string') {
+      return tx.hash;
+    }
+    if ('transactionHash' in tx && typeof tx.transactionHash === 'string') {
+      return tx.transactionHash;
+    }
+    return '';
+  }
+
+  async deployBatchCallContract(): Promise<ethers.BaseContract> {
     const result = await this.deployContract(batchCallABI, batchCallBytesCode);
     return result;
   }
+
   async batchStaticCall(
-    calls: Array<{
-      target: string;
-      data: string;
-      abi: any[];
-      function_name: string;
-      execute_args: any[];
-    }>,
+    calls: BatchContractCall[],
     blockNumber?: number,
     batchLimit: number = 200,
-  ) {
+  ): Promise<BatchStaticCallResult[]> {
     const i_batch_call_abi = batchCallABI;
 
     if (!this.batch_call_address) {
       throw new Error('BatchCallAddress not provided!');
     }
 
-    const results: Array<{
-      target: string;
-      success: boolean;
-      decodedData: any;
-      function: string;
-      args: any[];
-    }> = [];
+    const results: BatchStaticCallResult[] = [];
     // 按batchLimit分批处理
     for (let i = 0; i < calls.length; i += batchLimit) {
       const batch_calls = calls.slice(i, i + batchLimit);
@@ -104,33 +141,26 @@ export class EthersTxBatchHelper extends EthersTxHelper {
         }
       });
 
-      results.push(...batch_results.filter((res) => res !== null) as any[]);
+      results.push(
+        ...batch_results.filter(
+          (res): res is BatchStaticCallResult => res !== null,
+        ),
+      );
     }
     return results;
   }
+
   async batchCall(
-    calls: Array<{
-      target: string;
-      data: string;
-      abi: any[];
-      function_name: string;
-      execute_args: any[];
-    }>,
+    calls: BatchContractCall[],
     batchLimit: number = 200,
-  ) {
+  ): Promise<BatchWriteCallResult[]> {
     const i_batch_call_abi = batchCallABI;
 
     if (!this.batch_call_address) {
       throw new Error('BatchCallAddress未提供！');
     }
 
-    const results: Array<{
-      target: string;
-      success: boolean;
-      transactionHash: string;
-      function: string;
-      args: any[];
-    }> = [];
+    const results: BatchWriteCallResult[] = [];
 
     for (let i = 0; i < calls.length; i += batchLimit) {
       const batch_calls = calls.slice(i, i + batchLimit);
@@ -154,13 +184,13 @@ export class EthersTxBatchHelper extends EthersTxHelper {
         const batch_results = batch_calls.map((call) => ({
           target: call.target,
           success: true,
-          transactionHash: tx_response.hash,
+          transactionHash: this.getTransactionHash(tx_response),
           function: call.function_name,
           args: call.execute_args,
         }));
 
         results.push(...batch_results);
-      } catch (error: any) {
+      } catch (error) {
         console.error(`批量写入调用失败:`, error);
         const failed_results = batch_calls.map((call) => ({
           target: call.target,
@@ -170,7 +200,7 @@ export class EthersTxBatchHelper extends EthersTxHelper {
           args: call.execute_args,
         }));
         results.push(...failed_results);
-        throw new Error(`批量写入调用失败: ${error.message}`);
+        throw new Error(`批量写入调用失败: ${this.formatErrorMessage(error)}`);
       }
     }
 

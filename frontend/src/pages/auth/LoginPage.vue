@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { RouterLink, useRouter } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import Divider from 'primevue/divider';
 import InputText from 'primevue/inputtext';
 import Message from 'primevue/message';
 import Password from 'primevue/password';
 import { authService } from '../../api/authService';
+import { isSessionExpiredReason } from '../../api/sessionExpiry';
 import AuthSplitLayout from '../../components/auth/AuthSplitLayout.vue';
 
 const router = useRouter();
+const route = useRoute();
 
 const email = ref('');
 const password = ref('');
@@ -17,6 +19,10 @@ const isSubmitting = ref(false);
 const isGoogleSubmitting = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+const redirectHint = computed(() => {
+  return typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/');
+});
+const sessionExpiredHint = computed(() => isSessionExpiredReason(route.query.reason));
 
 const isEmailLoginDisabled = computed(() => {
   return (
@@ -45,7 +51,12 @@ async function handleEmailLogin() {
   }
 
   successMessage.value = 'Login successful.';
-  await router.push('/');
+  const redirectPath =
+    typeof route.query.redirect === 'string' &&
+    route.query.redirect.startsWith('/')
+      ? route.query.redirect
+      : '/';
+  await router.push(redirectPath);
 }
 
 async function handleGoogleLogin() {
@@ -131,6 +142,12 @@ async function handleGoogleLogin() {
     </form>
 
     <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
+    <Message v-else-if="sessionExpiredHint" severity="warn" class="mt-4">
+      Session expired. Please sign in again.
+    </Message>
+    <Message v-else-if="redirectHint" severity="info" class="mt-4">
+      Please sign in to continue.
+    </Message>
     <Message v-if="successMessage" severity="success" class="mt-4">{{ successMessage }}</Message>
 
     <template #footer>

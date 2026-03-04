@@ -1,11 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import { ethers, Log } from 'ethers';
 
 interface LogFilter {
   fromBlock?: number | string;
   toBlock?: number | string;
   topics?:
-  | (string | string[] | null)[]
-  | Record<string, (string | number | null)[]>;
+    | (string | string[] | null)[]
+    | Record<string, (string | number | null)[]>;
 }
 
 interface GetRawContractLogsParams {
@@ -151,10 +152,10 @@ export class EthersLogHelper {
     // 如果指定了event_names，则过滤相应的事件
     const event_abis = event_names
       ? all_event_abis.filter((item: any) =>
-        Array.isArray(event_names)
-          ? event_names.includes(item.name)
-          : item.name === event_names,
-      )
+          Array.isArray(event_names)
+            ? event_names.includes(item.name)
+            : item.name === event_names,
+        )
       : all_event_abis;
 
     if (event_abis.length === 0) {
@@ -306,7 +307,9 @@ export class EthersLogHelper {
       const firstValue = valuesAtPosition[0];
       const allSame = valuesAtPosition.every((val) => val === firstValue);
 
-      mergedTopics.push((allSame && firstValue !== undefined) ? firstValue : null);
+      mergedTopics.push(
+        allSame && firstValue !== undefined ? firstValue : null,
+      );
     }
 
     return mergedTopics;
@@ -401,10 +404,10 @@ export class EthersLogHelper {
       // 如果未指定event_names，则使用所有事件，否则过滤指定的事件
       const event_abis = event_names
         ? all_event_abis.filter((item: any) =>
-          Array.isArray(event_names)
-            ? event_names.includes(item.name)
-            : item.name === event_names,
-        )
+            Array.isArray(event_names)
+              ? event_names.includes(item.name)
+              : item.name === event_names,
+          )
         : all_event_abis;
 
       // 检查是否有匹配的事件ABI

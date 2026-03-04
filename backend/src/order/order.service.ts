@@ -5,9 +5,10 @@ import { BookingListInput } from '../booking/dto/booking-list.input';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
 import { PaymentIntent } from '../payment/dto/payment-intent.dto';
 import { PaymentStatus } from '../payment/dto/payment-status.enum';
-import { PaymentService } from '../payment/payment.service';
+import { PaymentEventLog, PaymentService } from '../payment/payment.service';
 import { OrderListInput } from './dto/order-list.input';
 import { OrderPage } from './dto/order-page.dto';
+import { OrderPaymentEvent } from './dto/order-payment-event.dto';
 import { OrderPaymentStatus } from './dto/order-payment-status.enum';
 import { Order } from './dto/order.dto';
 
@@ -31,7 +32,7 @@ export class OrderService {
 
     const items = await Promise.all(
       bookingPage.items.map(async (booking) => {
-        return this.toOrder(userId, booking);
+        return this.toOrder(userId, booking, false);
       }),
     );
 
@@ -49,14 +50,24 @@ export class OrderService {
       userId,
       orderId,
     );
-    return this.toOrder(userId, booking);
+    return this.toOrder(userId, booking, true);
   }
 
-  private async toOrder(userId: string, booking: Booking): Promise<Order> {
+  private async toOrder(
+    userId: string,
+    booking: Booking,
+    includePaymentEvents: boolean,
+  ): Promise<Order> {
     const payment = await this.paymentService.getPaymentByBooking(
       userId,
       booking.id,
     );
+    const paymentEvents = includePaymentEvents
+      ? await this.paymentService.listPaymentEventsByBooking(booking.id, {
+          limit: 30,
+          offset: 0,
+        })
+      : [];
 
     return {
       id: booking.id,
@@ -67,6 +78,9 @@ export class OrderService {
       paymentStatus: this.resolvePaymentStatus(booking.status, payment),
       expectedAmount: this.resolveExpectedAmount(booking, payment),
       createdAt: booking.createdAt,
+      paymentEvents: paymentEvents.map((event) =>
+        this.toOrderPaymentEvent(event),
+      ),
     };
   }
 
@@ -123,5 +137,17 @@ export class OrderService {
     }
 
     return OrderPaymentStatus.PENDING;
+  }
+
+  private toOrderPaymentEvent(event: PaymentEventLog): OrderPaymentEvent {
+    return {
+      eventId: event.eventId,
+      source: event.source,
+      status: event.status,
+      paidAmount: event.paidAmount,
+      txHash: event.txHash,
+      confirmations: event.confirmations,
+      createdAt: event.createdAt,
+    };
   }
 }

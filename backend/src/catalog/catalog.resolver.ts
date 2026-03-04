@@ -1,10 +1,14 @@
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { CheckAdmin } from '../auth/auth.guard.service';
 import { CatalogService } from './catalog.service';
+import { DeleteServiceInput } from './dto/delete-service.input';
+import { ServiceAuditListInput } from './dto/service-audit-list.input';
+import { ServiceAuditPage } from './dto/service-audit-page.dto';
 import { ServiceDetailUnion } from './dto/service-detail.dto';
 import { ServiceItem } from './dto/service-item.dto';
 import { ServiceListInput } from './dto/service-list.input';
 import { ServicePage } from './dto/service-page.dto';
+import { SetServiceStatusInput } from './dto/set-service-status.input';
 import { UpsertServiceInput } from './dto/upsert-service.input';
 
 @Resolver()
@@ -29,5 +33,29 @@ export class CatalogResolver {
     @Args('input') input: UpsertServiceInput,
   ): Promise<ServiceItem> {
     return this.catalogService.upsertService(input);
+  }
+
+  @Mutation(() => ServiceItem)
+  async adminSetServiceStatus(
+    @CheckAdmin() _: boolean,
+    @Args('input') input: SetServiceStatusInput,
+  ): Promise<ServiceItem> {
+    return this.catalogService.setServiceStatus(input);
+  }
+
+  @Mutation(() => Boolean)
+  async adminDeleteService(
+    @CheckAdmin() _: boolean,
+    @Args('input') input: DeleteServiceInput,
+  ): Promise<boolean> {
+    return this.catalogService.deleteService(input);
+  }
+
+  @Query(() => ServiceAuditPage)
+  async adminServiceAuditLogs(
+    @CheckAdmin() _: boolean,
+    @Args('input', { nullable: true }) input?: ServiceAuditListInput,
+  ): Promise<ServiceAuditPage> {
+    return this.catalogService.listServiceAuditLogs(input);
   }
 }

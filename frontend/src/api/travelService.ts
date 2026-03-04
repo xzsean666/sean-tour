@@ -62,6 +62,17 @@ export interface OrderItem {
   paymentStatus: "PENDING" | "PAID" | "EXPIRED";
   expectedAmount: string;
   createdAt: string;
+  paymentEvents: PaymentEvent[];
+}
+
+export interface PaymentEvent {
+  eventId: string;
+  source: string;
+  status: PaymentStatus;
+  paidAmount: string;
+  txHash?: string;
+  confirmations: number;
+  createdAt: string;
 }
 
 export interface OrderPage {
@@ -168,10 +179,19 @@ type OrderDetailGraphQL = {
     serviceTitle: string;
     city: string;
     bookingStatus: BookingStatus;
-    paymentStatus: "PENDING" | "PAID" | "EXPIRED";
-    expectedAmount: string;
-    createdAt: string;
-  };
+      paymentStatus: "PENDING" | "PAID" | "EXPIRED";
+      expectedAmount: string;
+      createdAt: string;
+      paymentEvents: Array<{
+        eventId: string;
+        source: string;
+        status: PaymentStatus;
+        paidAmount: string;
+        txHash?: string;
+        confirmations: number;
+        createdAt: string;
+      }>;
+    };
 };
 
 function asError(error: unknown): Error {
@@ -474,7 +494,10 @@ export const travelService = {
       });
 
       return {
-        items: data.myOrders.items,
+        items: data.myOrders.items.map((item) => ({
+          ...item,
+          paymentEvents: [],
+        })),
         total: data.myOrders.total,
         limit: data.myOrders.limit,
         offset: data.myOrders.offset,
@@ -499,6 +522,15 @@ export const travelService = {
               paymentStatus
               expectedAmount
               createdAt
+              paymentEvents {
+                eventId
+                source
+                status
+                paidAmount
+                txHash
+                confirmations
+                createdAt
+              }
             }
           }
         `,

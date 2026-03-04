@@ -20,4 +20,13 @@ export class UpdatePaymentStatusInput {
 
   @Field(() => Int, { nullable: true })
   confirmations?: number;
+
+  @Field({ nullable: true })
+  eventId?: string;
+
+  @Field({ nullable: true })
+  replayOfEventId?: string;
+
+  @Field({ nullable: true })
+  signature?: string;
 }

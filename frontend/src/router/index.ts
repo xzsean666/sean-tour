@@ -1,14 +1,17 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
-import ServicesPage from '../pages/ServicesPage.vue';
-import CheckoutPage from '../pages/CheckoutPage.vue';
-import OrdersPage from '../pages/OrdersPage.vue';
-import OrderDetailPage from '../pages/OrderDetailPage.vue';
-import LoginPage from '../pages/auth/LoginPage.vue';
-import RegisterPage from '../pages/auth/RegisterPage.vue';
-import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.vue';
-import ResetPasswordPage from '../pages/auth/ResetPasswordPage.vue';
-import AuthCallbackPage from '../pages/auth/AuthCallbackPage.vue';
 import { initAuthStore, useAuthStore } from '../stores/auth.store';
+
+const ServicesPage = () => import('../pages/ServicesPage.vue');
+const CheckoutPage = () => import('../pages/CheckoutPage.vue');
+const OrdersPage = () => import('../pages/OrdersPage.vue');
+const OrderDetailPage = () => import('../pages/OrderDetailPage.vue');
+const AdminServicesPage = () => import('../pages/AdminServicesPage.vue');
+const AdminPaymentsPage = () => import('../pages/AdminPaymentsPage.vue');
+const LoginPage = () => import('../pages/auth/LoginPage.vue');
+const RegisterPage = () => import('../pages/auth/RegisterPage.vue');
+const ForgotPasswordPage = () => import('../pages/auth/ForgotPasswordPage.vue');
+const ResetPasswordPage = () => import('../pages/auth/ResetPasswordPage.vue');
+const AuthCallbackPage = () => import('../pages/auth/AuthCallbackPage.vue');
 
 const routes: RouteRecordRaw[] = [
   {
@@ -24,16 +27,31 @@ const routes: RouteRecordRaw[] = [
     path: '/checkout/:bookingId',
     name: 'checkout',
     component: CheckoutPage,
+    meta: { requiresAuth: true },
   },
   {
     path: '/orders',
     name: 'orders',
     component: OrdersPage,
+    meta: { requiresAuth: true },
   },
   {
     path: '/orders/:id',
     name: 'order-detail',
     component: OrderDetailPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/services',
+    name: 'admin-services',
+    component: AdminServicesPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/payments',
+    name: 'admin-payments',
+    component: AdminPaymentsPage,
+    meta: { requiresAuth: true },
   },
   {
     path: '/auth/login',
@@ -76,6 +94,13 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   await initAuthStore();
   const { user } = useAuthStore();
+
+  if (to.meta.requiresAuth && !user.value) {
+    return {
+      path: '/auth/login',
+      query: { redirect: to.fullPath },
+    };
+  }
 
   if (to.meta.guestOnly && user.value) {
     return { path: '/' };

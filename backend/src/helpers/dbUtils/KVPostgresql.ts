@@ -1,11 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import 'reflect-metadata';
-import {
-  DataSource,
-  Repository,
-  Table,
-  In,
-  EntitySchema,
-} from 'typeorm';
+import { DataSource, Repository, Table, In, EntitySchema } from 'typeorm';
 
 // 添加值类型定义
 export type ValueType =
@@ -156,7 +151,8 @@ export class PGKVDatabase {
   ): void {
     if (!supported_types.includes(this.value_type)) {
       throw new Error(
-        `Operation '${operation}' is not supported for value type '${this.value_type
+        `Operation '${operation}' is not supported for value type '${
+          this.value_type
         }'. Supported types: ${supported_types.join(', ')}`,
       );
     }
@@ -198,12 +194,19 @@ export class PGKVDatabase {
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initialized) {
-      console.log(`[PGKVDatabase] Initializing DataSource for ${this.table_name}...`);
+      console.log(
+        `[PGKVDatabase] Initializing DataSource for ${this.table_name}...`,
+      );
       try {
         await this.data_source.initialize();
-        console.log(`[PGKVDatabase] DataSource initialized for ${this.table_name}`);
+        console.log(
+          `[PGKVDatabase] DataSource initialized for ${this.table_name}`,
+        );
       } catch (e) {
-        console.error(`[PGKVDatabase] Failed to initialize DataSource for ${this.table_name}:`, e);
+        console.error(
+          `[PGKVDatabase] Failed to initialize DataSource for ${this.table_name}:`,
+          e,
+        );
         throw e;
       }
       this.db = this.data_source.getRepository(this.custom_kv_store);
@@ -352,9 +355,9 @@ export class PGKVDatabase {
     options_or_expire?:
       | number
       | {
-        expire?: number;
-        include_timestamps?: boolean;
-      },
+          expire?: number;
+          include_timestamps?: boolean;
+        },
   ): Promise<T | { value: T; created_at: Date; updated_at: Date } | null> {
     await this.ensureInitialized();
     const record = await this.db.findOne({ where: { key } });
@@ -547,10 +550,10 @@ export class PGKVDatabase {
         ) => {
           acc[record.key] = include_timestamps
             ? {
-              value: record.value,
-              created_at: record.created_at,
-              updated_at: record.updated_at,
-            }
+                value: record.value,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+              }
             : record.value;
           return acc;
         },
@@ -649,10 +652,10 @@ export class PGKVDatabase {
           const value = this.deserializeValue(record.value) as T;
           acc[record.key] = include_timestamps
             ? {
-              value,
-              created_at: record.created_at,
-              updated_at: record.updated_at,
-            }
+                value,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+              }
             : value;
           return acc;
         },
@@ -751,10 +754,10 @@ export class PGKVDatabase {
           const value = this.deserializeValue(record.value) as T;
           acc[record.key] = include_timestamps
             ? {
-              value,
-              created_at: record.created_at,
-              updated_at: record.updated_at,
-            }
+                value,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+              }
             : value;
           return acc;
         },
@@ -911,10 +914,10 @@ export class PGKVDatabase {
         const value = this.deserializeValue(record.value) as T;
         acc[record.key] = include_timestamps
           ? {
-            value,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-          }
+              value,
+              created_at: record.created_at,
+              updated_at: record.updated_at,
+            }
           : value;
         return acc;
       },
@@ -1062,10 +1065,10 @@ export class PGKVDatabase {
         const value = this.deserializeValue(record.value) as T;
         acc[record.key] = include_timestamps
           ? {
-            value,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-          }
+              value,
+              created_at: record.created_at,
+              updated_at: record.updated_at,
+            }
           : value;
         return acc;
       },
@@ -1118,20 +1121,24 @@ export class PGKVDatabase {
           } else {
             serialized_value = String(value);
           }
-          valuePlaceholders.push(`($${paramIndex}, $${paramIndex + 1}, NOW(), NOW())`);
+          valuePlaceholders.push(
+            `($${paramIndex}, $${paramIndex + 1}, NOW(), NOW())`,
+          );
           params.push(key, serialized_value);
           paramIndex += 2;
         });
 
-
-        await query_runner.query(`
+        await query_runner.query(
+          `
           INSERT INTO "${this.table_name}" (key, value, created_at, updated_at)
           VALUES ${valuePlaceholders.join(',')}
           ON CONFLICT (key)
           DO UPDATE SET
             value = EXCLUDED.value,
             updated_at = EXCLUDED.updated_at
-        `, params);
+        `,
+          params,
+        );
       }
 
       await query_runner.commitTransaction();
@@ -1769,8 +1776,9 @@ export class PGKVDatabase {
           if (bulk_values.length > 0) {
             statements.push({
               query: `
-              INSERT INTO "${this.table_name
-                }" (key, value, created_at, updated_at)
+              INSERT INTO "${
+                this.table_name
+              }" (key, value, created_at, updated_at)
               VALUES ${bulk_values.join(',')}
             `,
               params: bulk_params,
@@ -1792,8 +1800,8 @@ export class PGKVDatabase {
           this.value_type === 'jsonb'
             ? JSON.stringify(updated_meta)
             : // For non-jsonb/bytea types, ensure the value is stringifiable, or throw error
-            // If valueType is not jsonb and the value is an object, serialize it as JSON string
-            typeof updated_meta === 'object'
+              // If valueType is not jsonb and the value is an object, serialize it as JSON string
+              typeof updated_meta === 'object'
               ? JSON.stringify(updated_meta)
               : String(updated_meta); // Stringify primitive types for other types
 
@@ -1883,8 +1891,8 @@ export class PGKVDatabase {
           this.value_type === 'jsonb'
             ? JSON.stringify(meta_data)
             : // For non-jsonb/bytea types, ensure the value is stringifiable, or throw error
-            // If valueType is not jsonb and the value is an object, serialize it as JSON string
-            typeof meta_data === 'object'
+              // If valueType is not jsonb and the value is an object, serialize it as JSON string
+              typeof meta_data === 'object'
               ? JSON.stringify(meta_data)
               : String(meta_data); // Stringify primitive types for other types
 

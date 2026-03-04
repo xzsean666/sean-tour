@@ -201,10 +201,17 @@ export class AlertMessageService {
     }
   }
 
-  private stringifyError(error: any): string {
-    if (error?.response?.data) {
-      return JSON.stringify(error.response.data);
+  private stringifyError(error: unknown): string {
+    if (error && typeof error === 'object') {
+      const response = (error as { response?: unknown }).response;
+      if (response && typeof response === 'object') {
+        const data = (response as { data?: unknown }).data;
+        if (data !== undefined) {
+          return JSON.stringify(data);
+        }
+      }
     }
+
     if (error instanceof Error) {
       return error.message;
     }

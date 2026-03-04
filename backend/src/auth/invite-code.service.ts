@@ -3,6 +3,32 @@ import { DBService, PGKVDatabase } from '../common/db.service';
 import { randomUUID } from 'crypto';
 import { InviteCodeInfo } from './dto/invite-code.dto';
 
+type SearchJsonRow = {
+  key: string;
+  value: unknown;
+};
+
+function toInviteCodeInfo(value: unknown): InviteCodeInfo | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<InviteCodeInfo>;
+  if (
+    typeof candidate.code !== 'string' ||
+    typeof candidate.username !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    code: candidate.code,
+    username: candidate.username,
+    createdAt:
+      typeof candidate.createdAt === 'string' ? candidate.createdAt : undefined,
+  };
+}
+
 @Injectable()
 export class InviteCodeService {
   protected readonly dbService: DBService;
@@ -43,8 +69,9 @@ export class InviteCodeService {
       },
     });
 
-    if (result.data.length > 0) {
-      return result.data[0] as InviteCodeInfo;
+    const rows = result.data as SearchJsonRow[];
+    if (rows.length > 0) {
+      return toInviteCodeInfo(rows[0].value);
     }
     return null;
   }
@@ -56,8 +83,9 @@ export class InviteCodeService {
       },
     });
 
-    if (result.data.length > 0) {
-      const key = result.data[0].key;
+    const rows = result.data as SearchJsonRow[];
+    if (rows.length > 0) {
+      const key = rows[0].key;
       await this.inviteCodeDB.delete(key);
       return true;
     }
