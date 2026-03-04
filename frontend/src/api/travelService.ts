@@ -27,6 +27,7 @@ export interface ServiceItem {
   city: string;
   description: string;
   languages: string[];
+  images: string[];
   priceAmount: number;
   currency: "USDT";
 }
@@ -92,6 +93,7 @@ type ServiceListGraphQL = {
       city: string;
       description: string;
       languages: string[];
+      images: string[];
       basePrice: {
         amount: number;
         currency: "USDT";
@@ -267,6 +269,7 @@ export const travelService = {
               city
               description
               languages
+              images
               basePrice {
                 amount
                 currency
@@ -300,6 +303,7 @@ export const travelService = {
         city: item.city,
         description: item.description,
         languages: item.languages,
+        images: item.images || [],
         priceAmount: item.basePrice.amount,
         currency: item.basePrice.currency,
       })),

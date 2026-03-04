@@ -235,4 +235,114 @@ describe('AssistantService', () => {
       service.getAssistantSessionDetailForUser('user_2', created.id),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('supports admin batch assign for multiple sessions', async () => {
+    const { db } = createInMemoryTravelDB();
+
+    const bookingServiceMock: Partial<BookingService> = {
+      getBookingByIdForUser: jest
+        .fn()
+        .mockImplementation((_userId: string, bookingId: string) =>
+          Promise.resolve(
+            createBooking({
+              id: bookingId,
+              serviceId: `svc_${bookingId}`,
+            }),
+          ),
+        ),
+    };
+    const dbServiceMock: Partial<DBService> = {
+      getDBInstance: jest.fn().mockReturnValue(db),
+    };
+
+    const service = new AssistantService(
+      bookingServiceMock as BookingService,
+      dbServiceMock as DBService,
+    );
+
+    const first = await service.requestAssistantSession('user_1', {
+      bookingId: 'bk_assistant_1',
+      topic: 'Airport arrival help',
+      preferredContact: 'WeChat',
+      preferredTimeSlots: ['2026-03-11 09:00-10:00 CST'],
+    });
+    const second = await service.requestAssistantSession('user_1', {
+      bookingId: 'bk_assistant_2',
+      topic: 'Hotel check-in support',
+      preferredContact: 'Email',
+      preferredTimeSlots: ['2026-03-11 11:00-12:00 CST'],
+    });
+
+    const updated = await service.adminBatchAssignAssistantSessions({
+      sessionIds: [first.id, second.id],
+      assignedAgent: 'Agent-Wang',
+      internalNote: 'night shift',
+    });
+
+    expect(updated).toHaveLength(2);
+    expect(updated[0].status).toBe(AssistantSessionStatus.ASSIGNED);
+    expect(updated[1].assignedAgent).toBe('Agent-Wang');
+    expect(updated[1].internalNote).toBe('night shift');
+  });
+
+  it('filters admin sessions by assignedAgent', async () => {
+    const { db } = createInMemoryTravelDB();
+
+    const bookingServiceMock: Partial<BookingService> = {
+      getBookingByIdForUser: jest
+        .fn()
+        .mockImplementation((_userId: string, bookingId: string) =>
+          Promise.resolve(
+            createBooking({
+              id: bookingId,
+              serviceId: `svc_${bookingId}`,
+            }),
+          ),
+        ),
+    };
+    const dbServiceMock: Partial<DBService> = {
+      getDBInstance: jest.fn().mockReturnValue(db),
+    };
+
+    const service = new AssistantService(
+      bookingServiceMock as BookingService,
+      dbServiceMock as DBService,
+    );
+
+    const first = await service.requestAssistantSession('user_1', {
+      bookingId: 'bk_assistant_1',
+      topic: 'Translate medicine instructions',
+      preferredContact: 'Email',
+      preferredTimeSlots: ['2026-03-12 09:00-10:00 CST'],
+    });
+    const second = await service.requestAssistantSession('user_1', {
+      bookingId: 'bk_assistant_2',
+      topic: 'Emergency route planning',
+      preferredContact: 'Phone',
+      preferredTimeSlots: ['2026-03-12 10:00-11:00 CST'],
+    });
+
+    await service.adminUpdateAssistantSession({
+      sessionId: first.id,
+      status: AssistantSessionStatus.ASSIGNED,
+      assignedAgent: 'Agent-Li',
+    });
+    await service.adminUpdateAssistantSession({
+      sessionId: second.id,
+      status: AssistantSessionStatus.ASSIGNED,
+      assignedAgent: 'Agent-Wang',
+    });
+
+    const filtered = await service.adminListAssistantSessions({
+      assignedAgent: 'Agent-Wang',
+      page: {
+        limit: 10,
+        offset: 0,
+      },
+    });
+
+    expect(filtered.total).toBe(1);
+    expect(filtered.items[0].id).toBe(second.id);
+    expect(filtered.items[0].assignedAgent).toBe('Agent-Wang');
+  });
 });

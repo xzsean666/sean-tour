@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
+import Button from "primevue/button";
 import Card from "primevue/card";
 import Message from "primevue/message";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
-import { travelService, type OrderItem } from "../api/travelService";
+import { travelService, type OrderItem, type PaymentEvent } from "../api/travelService";
 
 const route = useRoute();
 
@@ -14,6 +15,7 @@ const errorMessage = ref("");
 const order = ref<OrderItem | null>(null);
 
 const orderId = computed(() => String(route.params.id || ""));
+const paymentEvents = computed(() => order.value?.paymentEvents || []);
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString("en-US", {
@@ -23,6 +25,38 @@ function formatDate(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getPaymentSeverity(
+  status: "PENDING" | "PAID" | "EXPIRED",
+): "success" | "warn" | "danger" {
+  if (status === "PAID") {
+    return "success";
+  }
+
+  if (status === "EXPIRED") {
+    return "danger";
+  }
+
+  return "warn";
+}
+
+function getEventSeverity(
+  event: PaymentEvent,
+): "success" | "info" | "warn" | "danger" {
+  if (event.status === "PAID") {
+    return "success";
+  }
+
+  if (event.status === "EXPIRED") {
+    return "danger";
+  }
+
+  if (event.status === "PARTIALLY_PAID") {
+    return "info";
+  }
+
+  return "warn";
 }
 
 async function loadOrderDetail() {
@@ -49,87 +83,110 @@ onMounted(async () => {
 
 <template>
   <section
-    class="rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm"
+    class="relative overflow-hidden rounded-3xl border border-[#0c6d64]/20 bg-gradient-to-br from-[#093039] via-[#0f4850] to-[#12365f] px-6 py-8 text-white shadow-[0_26px_90px_-55px_rgba(7,41,46,0.95)]"
   >
-    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-      Order Detail
-    </p>
-    <h1 class="mt-2 text-3xl font-semibold text-slate-900">
-      Order {{ orderId }}
-    </h1>
+    <div class="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-[#f8b03c]/20 blur-3xl" />
+    <div class="absolute -left-16 -bottom-24 h-52 w-52 rounded-full bg-[#2ad0a1]/15 blur-3xl" />
+
+    <p class="relative text-xs font-semibold uppercase tracking-[0.16em] text-teal-100/90">Order Detail</p>
+    <h1 class="relative mt-2 text-3xl font-semibold leading-tight">Order {{ orderId }}</h1>
   </section>
 
-  <Message v-if="errorMessage" severity="error" class="mt-4">{{
-    errorMessage
-  }}</Message>
+  <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
 
   <div v-if="loading" class="mt-8 flex justify-center">
     <ProgressSpinner style="width: 40px; height: 40px" stroke-width="6" />
   </div>
 
-  <Card v-else-if="order" class="mt-6 !rounded-2xl !border !border-slate-200">
-    <template #content>
-      <div class="grid gap-3 text-sm">
+  <section v-else-if="order" class="mt-6 grid gap-4 lg:grid-cols-[1.02fr_0.98fr]">
+    <Card class="!rounded-3xl !border !border-slate-200/90 !bg-white/95">
+      <template #title>
         <div class="flex flex-wrap items-center gap-2">
-          <h2 class="text-xl font-semibold text-slate-900">
-            {{ order.serviceTitle }}
-          </h2>
+          <h2 class="text-xl font-semibold text-slate-900">{{ order.serviceTitle }}</h2>
           <Tag :value="order.bookingStatus" severity="info" rounded />
-          <Tag
-            :value="order.paymentStatus"
-            :severity="order.paymentStatus === 'PAID' ? 'success' : 'warn'"
-            rounded
-          />
+          <Tag :value="order.paymentStatus" :severity="getPaymentSeverity(order.paymentStatus)" rounded />
         </div>
-        <p>
-          <span class="text-slate-500">Booking ID:</span> {{ order.bookingId }}
-        </p>
-        <p><span class="text-slate-500">City:</span> {{ order.city }}</p>
-        <p>
-          <span class="text-slate-500">Expected:</span>
-          {{ order.expectedAmount }} USDT
-        </p>
-        <RouterLink
-          :to="`/assistant?bookingId=${order.bookingId}`"
-          class="inline-flex max-w-[260px] items-center justify-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
-        >
-          Request Remote Assistant
-        </RouterLink>
-        <div class="mt-3 border-t border-slate-200 pt-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            Payment Events
-          </p>
-          <div class="mt-2 grid gap-2">
-            <div
-              v-for="event in order.paymentEvents"
-              :key="event.eventId"
-              class="rounded-xl border border-slate-200 px-3 py-2 text-xs"
-            >
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex items-center gap-2">
-                  <Tag :value="event.source" severity="contrast" rounded />
-                  <Tag
-                    :value="event.status"
-                    :severity="event.status === 'PAID' ? 'success' : 'warn'"
-                    rounded
-                  />
-                </div>
-                <span class="text-slate-500">{{ formatDate(event.createdAt) }}</span>
-              </div>
-              <p class="mt-1">
-                <span class="text-slate-500">Paid:</span> {{ event.paidAmount }} USDT
-                · <span class="text-slate-500">Conf:</span> {{ event.confirmations }}
-              </p>
-              <p v-if="event.txHash" class="mt-1 break-all text-slate-500">
-                Tx: {{ event.txHash }}
-              </p>
-            </div>
-            <p v-if="order.paymentEvents.length === 0" class="text-xs text-slate-500">
-              No payment callback events yet.
+      </template>
+
+      <template #content>
+        <div class="grid gap-3 text-sm">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <p><span class="text-slate-500">Booking ID:</span> {{ order.bookingId }}</p>
+            <p class="mt-1"><span class="text-slate-500">City:</span> {{ order.city }}</p>
+            <p class="mt-1">
+              <span class="text-slate-500">Expected Amount:</span>
+              <span class="font-semibold text-[#0f5b54]">{{ order.expectedAmount }} USDT</span>
             </p>
+            <p class="mt-1"><span class="text-slate-500">Created:</span> {{ formatDate(order.createdAt) }}</p>
+          </div>
+
+          <div class="grid gap-2 sm:grid-cols-2">
+            <RouterLink
+              :to="`/checkout/${order.bookingId}`"
+              class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Open Checkout
+            </RouterLink>
+            <RouterLink
+              :to="`/assistant?bookingId=${order.bookingId}`"
+              class="inline-flex items-center justify-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+            >
+              Request Assistant
+            </RouterLink>
           </div>
         </div>
-      </div>
-    </template>
-  </Card>
+      </template>
+    </Card>
+
+    <Card class="!rounded-3xl !border !border-slate-200/90 !bg-white/95">
+      <template #title>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-xl font-semibold text-slate-900">Payment Timeline</h2>
+          <Button
+            icon="pi pi-refresh"
+            text
+            rounded
+            aria-label="Refresh"
+            @click="loadOrderDetail"
+          />
+        </div>
+      </template>
+
+      <template #content>
+        <div class="grid gap-3">
+          <div
+            v-for="event in paymentEvents"
+            :key="event.eventId"
+            class="rounded-2xl border border-slate-200 bg-white px-3 py-3"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <Tag :value="event.source" severity="contrast" rounded />
+                <Tag :value="event.status" :severity="getEventSeverity(event)" rounded />
+              </div>
+              <span class="text-xs text-slate-500">{{ formatDate(event.createdAt) }}</span>
+            </div>
+
+            <p class="mt-2 text-xs text-slate-600">
+              Event ID: <span class="font-mono">{{ event.eventId }}</span>
+            </p>
+            <p class="mt-1 text-xs text-slate-600">
+              Paid: <span class="font-semibold">{{ event.paidAmount }} USDT</span>
+              · Confirmations: <span class="font-semibold">{{ event.confirmations }}</span>
+            </p>
+            <p v-if="event.txHash" class="mt-1 break-all text-xs text-slate-500">
+              Tx: {{ event.txHash }}
+            </p>
+          </div>
+
+          <p
+            v-if="paymentEvents.length === 0"
+            class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-6 text-sm text-slate-500"
+          >
+            No payment callback events yet.
+          </p>
+        </div>
+      </template>
+    </Card>
+  </section>
 </template>

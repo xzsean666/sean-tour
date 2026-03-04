@@ -14,21 +14,133 @@ import {
 } from "../api/travelService";
 import { useAuthStore } from "../stores/auth.store";
 
+type ServiceTypeFilter = "ALL" | ServiceType;
+
+const PAGE_SIZE = 9;
+
 const router = useRouter();
 const { user } = useAuthStore();
 
-const typeFilter = ref<"ALL" | ServiceType>("ALL");
+const typeFilter = ref<ServiceTypeFilter>("ALL");
 const cityFilter = ref("");
 const languageFilter = ref("");
+
 const loading = ref(false);
+const checkoutLoadingServiceId = ref<string | null>(null);
+
 const errorMessage = ref("");
 const services = ref<ServiceItem[]>([]);
 const total = ref(0);
-const checkoutLoadingServiceId = ref<string | null>(null);
+const offset = ref(0);
+const hasMore = ref(false);
 
 const hasData = computed(() => services.value.length > 0);
+const hasPrevPage = computed(() => offset.value > 0);
+const pageStart = computed(() => (services.value.length > 0 ? offset.value + 1 : 0));
+const pageEnd = computed(() => offset.value + services.value.length);
 
-async function loadServices() {
+function toIsoDate(offsetDays: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function getTypeSeverity(
+  type: ServiceType,
+): "success" | "info" | "warn" | "contrast" {
+  if (type === "PACKAGE") {
+    return "success";
+  }
+
+  if (type === "GUIDE") {
+    return "info";
+  }
+
+  if (type === "CAR") {
+    return "warn";
+  }
+
+  return "contrast";
+}
+
+function getTypeAccentClass(type: ServiceType): string {
+  if (type === "PACKAGE") {
+    return "from-[#197b69] to-[#1e9d85]";
+  }
+
+  if (type === "GUIDE") {
+    return "from-[#2f7db9] to-[#60a4d8]";
+  }
+
+  if (type === "CAR") {
+    return "from-[#965f16] to-[#d79a41]";
+  }
+
+  return "from-[#5639a8] to-[#8f6bd8]";
+}
+
+function getFallbackImage(type: ServiceType): string {
+  const palettes: Record<
+    ServiceType,
+    { from: string; to: string; accent: string; label: string }
+  > = {
+    PACKAGE: {
+      from: "#155f52",
+      to: "#2ea38b",
+      accent: "#f8b03c",
+      label: "China Packages",
+    },
+    GUIDE: {
+      from: "#245d96",
+      to: "#5da6da",
+      accent: "#f3c36a",
+      label: "Local Guides",
+    },
+    CAR: {
+      from: "#88520f",
+      to: "#d79a41",
+      accent: "#fff0c5",
+      label: "Private Car",
+    },
+    ASSISTANT: {
+      from: "#4b3792",
+      to: "#8f6bd8",
+      accent: "#d7c4ff",
+      label: "Remote Assistant",
+    },
+  };
+
+  const palette = palettes[type];
+  const svg = `
+    <svg xmlns='http://www.w3.org/2000/svg' width='1200' height='720' viewBox='0 0 1200 720'>
+      <defs>
+        <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
+          <stop offset='0%' stop-color='${palette.from}' />
+          <stop offset='100%' stop-color='${palette.to}' />
+        </linearGradient>
+      </defs>
+      <rect width='1200' height='720' fill='url(#bg)' />
+      <circle cx='960' cy='140' r='180' fill='${palette.accent}' fill-opacity='0.25' />
+      <circle cx='180' cy='640' r='240' fill='${palette.accent}' fill-opacity='0.16' />
+      <text x='70' y='610' fill='white' fill-opacity='0.92' font-size='56' font-family='Manrope, sans-serif' font-weight='700'>
+        ${palette.label}
+      </text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function getCoverImage(service: ServiceItem): string {
+  const firstImage = service.images?.[0]?.trim();
+  if (firstImage) {
+    return firstImage;
+  }
+
+  return getFallbackImage(service.type);
+}
+
+async function loadServices(nextOffset: number = offset.value): Promise<void> {
   loading.value = true;
   errorMessage.value = "";
 
@@ -37,12 +149,14 @@ async function loadServices() {
       type: typeFilter.value === "ALL" ? undefined : typeFilter.value,
       city: cityFilter.value,
       language: languageFilter.value,
-      limit: 12,
-      offset: 0,
+      limit: PAGE_SIZE,
+      offset: Math.max(nextOffset, 0),
     });
 
     services.value = result.items;
     total.value = result.total;
+    offset.value = result.offset;
+    hasMore.value = result.hasMore;
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : "Failed to load services.";
@@ -51,17 +165,36 @@ async function loadServices() {
   }
 }
 
-function toIsoDate(offsetDays: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
+async function applyFilters(): Promise<void> {
+  await loadServices(0);
 }
 
-async function startCheckout(serviceId: string) {
+async function goPrevPage(): Promise<void> {
+  if (!hasPrevPage.value || loading.value) {
+    return;
+  }
+
+  await loadServices(offset.value - PAGE_SIZE);
+}
+
+async function goNextPage(): Promise<void> {
+  if (!hasMore.value || loading.value) {
+    return;
+  }
+
+  await loadServices(offset.value + PAGE_SIZE);
+}
+
+async function startCheckout(serviceId: string): Promise<void> {
   errorMessage.value = "";
 
   if (!user.value) {
-    await router.push("/auth/login");
+    await router.push({
+      path: "/auth/login",
+      query: {
+        redirect: `/services?serviceId=${serviceId}`,
+      },
+    });
     return;
   }
 
@@ -84,116 +217,135 @@ async function startCheckout(serviceId: string) {
   }
 }
 
-function getTypeSeverity(
-  type: ServiceType,
-): "success" | "info" | "warn" | "contrast" {
-  if (type === "PACKAGE") {
-    return "success";
-  }
-
-  if (type === "GUIDE") {
-    return "info";
-  }
-
-  if (type === "CAR") {
-    return "warn";
-  }
-
-  return "contrast";
-}
-
 onMounted(async () => {
-  await loadServices();
+  await loadServices(0);
 });
 </script>
 
 <template>
   <section
-    class="rounded-3xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50 via-white to-teal-50 px-6 py-7 shadow-sm"
+    class="relative overflow-hidden rounded-3xl border border-[#0c6d64]/20 bg-gradient-to-br from-[#083331] via-[#0f5b54] to-[#0b3038] px-6 py-8 text-white shadow-[0_26px_90px_-55px_rgba(7,41,46,0.95)]"
   >
-    <p
-      class="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700"
-    >
-      Sean Tour Services
-    </p>
-    <h1 class="mt-2 text-3xl font-semibold text-slate-900">
-      Crypto-ready China Travel Catalog
-    </h1>
-    <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-      Fixed pricing in USDT, BSC/ERC20 checkout flow, and cross-city support for
-      packages, guides, chauffeured rides, and remote assistants.
-    </p>
+    <div class="absolute -right-24 -top-28 h-56 w-56 rounded-full bg-[#f8b03c]/25 blur-3xl" />
+    <div class="absolute -left-16 -bottom-24 h-52 w-52 rounded-full bg-[#2ad0a1]/20 blur-3xl" />
+
+    <div class="relative flex flex-wrap items-end justify-between gap-4">
+      <div class="max-w-3xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-teal-100/90">
+          Sean Tour Marketplace
+        </p>
+        <h1 class="mt-2 text-3xl font-semibold leading-tight md:text-[2.1rem]">
+          Book China experiences like Viator, pay in USDT.
+        </h1>
+        <p class="mt-3 text-sm leading-6 text-teal-50/90 md:text-[0.95rem]">
+          Curated tours, local guides, private transfers, and remote assistant support across major
+          cities. Lock your itinerary fast, then complete checkout on BSC/ERC20.
+        </p>
+      </div>
+
+      <div class="grid min-w-[240px] gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm backdrop-blur-sm">
+        <p class="text-teal-50/85">
+          Showing <span class="font-semibold text-white">{{ pageStart }} - {{ pageEnd }}</span>
+          of <span class="font-semibold text-white">{{ total }}</span>
+        </p>
+        <p class="text-xs text-teal-100/90">All prices are fixed in USDT.</p>
+      </div>
+    </div>
   </section>
 
   <Card class="mt-5 !rounded-3xl !border !border-slate-200/80 !bg-white/95">
     <template #content>
-      <div class="grid gap-3 md:grid-cols-4">
+      <div class="grid gap-3 lg:grid-cols-[170px_1fr_1fr_auto]">
         <label class="space-y-1">
-          <span
-            class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
-            >Type</span
-          >
+          <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Type</span>
           <select
             v-model="typeFilter"
             class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
           >
-            <option value="ALL">All</option>
-            <option value="PACKAGE">Package</option>
-            <option value="GUIDE">Guide</option>
-            <option value="CAR">Car</option>
-            <option value="ASSISTANT">Assistant</option>
+            <option value="ALL">All Types</option>
+            <option value="PACKAGE">Packages</option>
+            <option value="GUIDE">Guides</option>
+            <option value="CAR">Car Service</option>
+            <option value="ASSISTANT">Remote Assistant</option>
           </select>
         </label>
 
         <label class="space-y-1">
-          <span
-            class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
-            >City</span
-          >
-          <InputText
-            v-model="cityFilter"
-            placeholder="Beijing / Shanghai"
-            class="w-full"
-          />
+          <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">City</span>
+          <InputText v-model="cityFilter" placeholder="Beijing / Shanghai" class="w-full" />
         </label>
 
         <label class="space-y-1">
-          <span
-            class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"
-            >Language</span
-          >
-          <InputText
-            v-model="languageFilter"
-            placeholder="English / Chinese"
-            class="w-full"
-          />
+          <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Language
+          </span>
+          <InputText v-model="languageFilter" placeholder="English / Chinese" class="w-full" />
         </label>
 
         <div class="flex items-end">
           <Button
-            label="Apply Filters"
+            label="Apply"
             icon="pi pi-search"
             class="w-full !rounded-xl !py-2.5"
             :loading="loading"
-            @click="loadServices"
+            @click="applyFilters"
           />
         </div>
       </div>
     </template>
   </Card>
 
-  <Message v-if="errorMessage" severity="error" class="mt-4">{{
-    errorMessage
-  }}</Message>
+  <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
 
-  <div v-if="loading" class="mt-6 flex justify-center">
-    <ProgressSpinner style="width: 38px; height: 38px" stroke-width="6" />
+  <div v-if="loading" class="mt-8 flex justify-center">
+    <ProgressSpinner style="width: 40px; height: 40px" stroke-width="6" />
   </div>
 
   <section v-else class="mt-6">
-    <div class="mb-4 flex items-center justify-between gap-3">
-      <h2 class="text-xl font-semibold text-slate-900">Available Services</h2>
-      <p class="text-sm text-slate-500">{{ total }} result(s)</p>
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <Card
+        v-for="service in services"
+        :key="service.id"
+        class="!overflow-hidden !rounded-3xl !border !border-slate-200/85 !bg-white"
+      >
+        <template #content>
+          <div class="relative -mx-[1.125rem] -mt-[1rem] mb-4 h-44 overflow-hidden">
+            <img
+              :src="getCoverImage(service)"
+              :alt="service.title"
+              class="h-full w-full object-cover transition duration-500 hover:scale-105"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+            <div class="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
+              <Tag :value="service.type" :severity="getTypeSeverity(service.type)" rounded />
+              <span
+                class="rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-slate-800"
+                :class="`bg-gradient-to-r ${getTypeAccentClass(service.type)} text-white`"
+              >
+                {{ service.priceAmount }} {{ service.currency }}
+              </span>
+            </div>
+          </div>
+
+          <h3 class="text-lg font-semibold leading-snug text-slate-900">{{ service.title }}</h3>
+          <p class="mt-1 text-sm text-slate-500">{{ service.city }} · {{ service.languages.join(" / ") }}</p>
+          <p class="mt-3 min-h-[66px] text-sm leading-6 text-slate-600">
+            {{ service.description }}
+          </p>
+
+          <Button
+            label="Create Booking"
+            icon="pi pi-arrow-right"
+            icon-pos="right"
+            class="mt-4 !inline-flex !w-full !justify-center !rounded-xl !bg-slate-900 !px-4 !py-2.5 !text-sm !font-semibold !text-white hover:!bg-slate-800"
+            :loading="checkoutLoadingServiceId === service.id"
+            :disabled="checkoutLoadingServiceId !== null"
+            @click="startCheckout(service.id)"
+          />
+        </template>
+      </Card>
     </div>
 
     <div
@@ -203,52 +355,30 @@ onMounted(async () => {
       No services matched the current filters.
     </div>
 
-    <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <Card
-        v-for="service in services"
-        :key="service.id"
-        class="!rounded-2xl !border !border-slate-200/80 !bg-white"
-      >
-        <template #title>
-          <div class="flex items-start justify-between gap-3">
-            <h3 class="text-lg font-semibold text-slate-900">
-              {{ service.title }}
-            </h3>
-            <Tag
-              :severity="getTypeSeverity(service.type)"
-              :value="service.type"
-              rounded
-            />
-          </div>
-        </template>
-
-        <template #subtitle>
-          <p class="text-sm text-slate-500">
-            {{ service.city }} · {{ service.languages.join(" / ") }}
-          </p>
-        </template>
-
-        <template #content>
-          <p class="text-sm leading-6 text-slate-600">
-            {{ service.description }}
-          </p>
-
-          <div class="mt-4 flex items-center justify-between">
-            <p class="text-sm text-slate-500">From</p>
-            <p class="text-lg font-semibold text-slate-900">
-              {{ service.priceAmount }} {{ service.currency }}
-            </p>
-          </div>
-
-          <Button
-            label="Create Booking & Checkout"
-            class="mt-4 !inline-flex !w-full !justify-center !rounded-xl !bg-slate-900 !px-4 !py-2.5 !text-sm !font-semibold !text-white hover:!bg-slate-800"
-            :loading="checkoutLoadingServiceId === service.id"
-            :disabled="loading || checkoutLoadingServiceId !== null"
-            @click="startCheckout(service.id)"
-          />
-        </template>
-      </Card>
+    <div
+      v-if="hasData"
+      class="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between"
+    >
+      <p class="text-sm text-slate-600">
+        Showing {{ pageStart }} - {{ pageEnd }} of {{ total }} service(s)
+      </p>
+      <div class="flex items-center gap-2">
+        <Button
+          label="Previous"
+          icon="pi pi-angle-left"
+          text
+          :disabled="!hasPrevPage || loading"
+          @click="goPrevPage"
+        />
+        <Button
+          label="Next"
+          icon="pi pi-angle-right"
+          icon-pos="right"
+          text
+          :disabled="!hasMore || loading"
+          @click="goNextPage"
+        />
+      </div>
     </div>
   </section>
 </template>

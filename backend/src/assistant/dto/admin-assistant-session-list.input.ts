@@ -13,6 +13,9 @@ export class AdminAssistantSessionListInput {
   @Field({ nullable: true })
   userId?: string;
 
+  @Field({ nullable: true })
+  assignedAgent?: string;
+
   @Field(() => AssistantSessionStatus, { nullable: true })
   status?: AssistantSessionStatus;
 

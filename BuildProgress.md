@@ -75,7 +75,10 @@
   - 后端构建验证通过：`pnpm --dir backend build`。
   - 支付链路关键测试通过：`payment.service.spec.ts`、`payment.entry.spec.ts`、`order-payment-flow.entry.spec.ts`。
   - 后端新增 `assistant` 模块：`requestAssistantSession/myAssistantSessions/assistantSessionDetail/adminAssistantSessions/adminUpdateAssistantSession`，支持远程小助手会话创建、查询和管理状态推进。
+  - 后端 `assistant` 管理能力补齐：`adminAssistantSessions` 新增 `assignedAgent` 过滤，新增 `adminBatchAssignAssistantSessions` 批量分配 mutation（支持多会话批量指派、可选状态与备注更新）。
   - 前端新增 `/assistant` 页面与 `src/api/assistantService.ts`，已接入助手会话提单与历史会话列表；导航与订单详情已增加快捷入口。
+  - 前端新增 `src/api/adminAssistantService.ts` 与 `/admin/assistant` 运营页，已接入 `adminAssistantSessions + adminUpdateAssistantSession + adminBatchAssignAssistantSessions`，支持筛选、批量分配、单条状态/备注维护。
+  - 前端 UI 完成旅游平台风格升级：重做 `App` 导航壳层与 `Services/Checkout/Orders/OrderDetail/Assistant` 五个核心页面（品牌 Hero、卡片信息层级、状态可视化与移动端布局优化）。
   - `booking` 新增核心风控：仅 `ACTIVE` 服务可下单、CAR 服务按 `seats` 校验 `travelerCount`、同用户同服务时间段重复预订拦截（排除已取消单）。
   - 新增 `assistant.service.spec.ts`、`booking.service.spec.ts`，并更新 `order-payment-flow.entry.spec.ts` 以覆盖新风控后的稳定回归。
   - `payment` 已接入 `helpers/web3/wallet/web3Wallet.ts`：`createUsdtPayment` 通过 `PaymentWalletService` 创建链上收款订单并动态分配收款地址（配置缺失时自动回退占位地址，避免开发环境阻塞）。
@@ -85,7 +88,7 @@
 - 进行中：
   - 助手模块上线后的端到端手工回归（用户提单 + 管理员派单 + 状态流转）。
 - 下一步：
-  - 补充助手管理端最小运营面板（按状态筛选、批量分配、备注回显）。
+  - 增强助手运营面板能力（批量状态推进、导出、会话 SLA 超时标记）。
   - 配置并联调真实 USDT 收款环境参数（RPC/Token/BatchCall/MasterKey），完成链上订单创建与对账验证。
   - 补充用户侧服务详情与下单参数（日期/人数）显式编辑，减少硬编码默认值。
 
@@ -143,3 +146,6 @@
 - 2026-03-04: 前端新增 `/assistant` 会话页与 API，订单详情新增“一键发起助手请求”入口。
 - 2026-03-04: `booking` 增加风控规则（服务状态校验、包车座位上限、重复时段预订拦截），并新增 `booking.service.spec.ts` 回归覆盖。
 - 2026-03-04: 新增 `PaymentWalletService` 并接入 `web3Wallet.ts`，`createUsdtPayment` 改为链上订单驱动的动态收款地址分配；同时补充配置项与 `payment-wallet.service.spec.ts` 回归。
+- 2026-03-04: 后端 `assistant` 新增运营能力：`adminBatchAssignAssistantSessions` 批量分配 mutation + `adminAssistantSessions.assignedAgent` 过滤，并补充 `assistant.service.spec.ts` 对应回归用例。
+- 2026-03-04: 前端新增助手运营 API/页面：`src/api/adminAssistantService.ts` + `/admin/assistant`，打通助手会话筛选、批量分配、单条更新闭环。
+- 2026-03-04: 前端完成核心业务页 UI 升级（`App` 导航壳层 + `Services/Checkout/Orders/OrderDetail/Assistant`），统一为旅游平台视觉与信息结构。

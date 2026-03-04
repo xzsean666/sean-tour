@@ -8,6 +8,7 @@ const OrderDetailPage = () => import('../pages/OrderDetailPage.vue');
 const AssistantPage = () => import('../pages/AssistantPage.vue');
 const AdminServicesPage = () => import('../pages/AdminServicesPage.vue');
 const AdminPaymentsPage = () => import('../pages/AdminPaymentsPage.vue');
+const AdminAssistantPage = () => import('../pages/AdminAssistantPage.vue');
 const LoginPage = () => import('../pages/auth/LoginPage.vue');
 const RegisterPage = () => import('../pages/auth/RegisterPage.vue');
 const ForgotPasswordPage = () => import('../pages/auth/ForgotPasswordPage.vue');
@@ -58,6 +59,12 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/payments',
     name: 'admin-payments',
     component: AdminPaymentsPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/assistant',
+    name: 'admin-assistant',
+    component: AdminAssistantPage,
     meta: { requiresAuth: true },
   },
   {

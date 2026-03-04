@@ -9,6 +9,7 @@ import { BookingService } from '../booking/booking.service';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
 import { DBService, PGKVDatabase } from '../common/db.service';
 import { ServiceType } from '../catalog/dto/service-type.enum';
+import { AdminBatchAssignAssistantSessionsInput } from './dto/admin-batch-assign-assistant-sessions.input';
 import { AdminAssistantSessionListInput } from './dto/admin-assistant-session-list.input';
 import { AdminUpdateAssistantSessionInput } from './dto/admin-update-assistant-session.input';
 import { AssistantSessionListInput } from './dto/assistant-session-list.input';
@@ -34,6 +35,7 @@ const REQUEST_ALLOWED_BOOKING_STATUS: BookingStatus[] = [
   BookingStatus.IN_SERVICE,
   BookingStatus.COMPLETED,
 ];
+const ADMIN_BATCH_ASSIGN_LIMIT = 50;
 
 @Injectable()
 export class AssistantService {
@@ -183,6 +185,10 @@ export class AssistantService {
       contains.userId = input.userId.trim();
     }
 
+    if (input?.assignedAgent?.trim()) {
+      contains.assignedAgent = input.assignedAgent.trim();
+    }
+
     if (input?.status) {
       contains.status = input.status;
     }
@@ -234,6 +240,46 @@ export class AssistantService {
 
     await this.travelDB.put(`assistant_session:${updated.id}`, updated);
     return this.toAssistantSession(updated);
+  }
+
+  async adminBatchAssignAssistantSessions(
+    input: AdminBatchAssignAssistantSessionsInput,
+  ): Promise<AssistantSession[]> {
+    const sessionIds = this.requireSessionIdList(input.sessionIds);
+    const assignedAgent = this.requireText(
+      input.assignedAgent,
+      'assignedAgent',
+    );
+    const status = input.status ?? AssistantSessionStatus.ASSIGNED;
+    const shouldUpdateNote = input.internalNote !== undefined;
+    const internalNote = shouldUpdateNote
+      ? input.internalNote?.trim() || undefined
+      : undefined;
+    const now = new Date().toISOString();
+
+    const records = await Promise.all(
+      sessionIds.map((sessionId) => this.getSessionRecordById(sessionId)),
+    );
+
+    const updates = records.map((record) => {
+      const updated: AssistantSessionRecord = {
+        ...record,
+        status,
+        assignedAgent,
+        internalNote: shouldUpdateNote ? internalNote : record.internalNote,
+        updatedAt: now,
+      };
+
+      return updated;
+    });
+
+    await Promise.all(
+      updates.map((record) =>
+        this.travelDB.put(`assistant_session:${record.id}`, record),
+      ),
+    );
+
+    return updates.map((record) => this.toAssistantSession(record));
   }
 
   private async findLatestSessionByBooking(
@@ -344,6 +390,17 @@ export class AssistantService {
     }
 
     return unique;
+  }
+
+  private requireSessionIdList(values: string[]): string[] {
+    const normalized = this.requireStringArray(values, 'sessionIds');
+    if (normalized.length > ADMIN_BATCH_ASSIGN_LIMIT) {
+      throw new BadRequestException(
+        `sessionIds exceeds max batch size ${ADMIN_BATCH_ASSIGN_LIMIT}`,
+      );
+    }
+
+    return normalized;
   }
 
   private resolveLanguage(language: string | undefined): string {
