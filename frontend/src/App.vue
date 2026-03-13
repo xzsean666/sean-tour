@@ -11,15 +11,29 @@ const { user, isReady, signOutFromAuthStore } = useAuthStore();
 const isSigningOut = ref(false);
 const supabaseConfigured = hasSupabaseConfig();
 const isAuthRoute = computed(() => route.path.startsWith('/auth/'));
+const assistantLink = computed(() =>
+  user.value ? '/assistant/requests' : '/assistant',
+);
 
 const primaryLinks = computed(() => {
+  const browseLinks = [
+    { to: '/', label: 'Home' },
+    { to: '/packages', label: 'Packages' },
+    { to: '/guides', label: 'Guides' },
+    { to: '/cars', label: 'Cars' },
+    { to: assistantLink.value, label: 'Assistant' },
+    { to: '/faq', label: 'FAQ' },
+    { to: '/support', label: 'Support' },
+  ];
+
   return [
-    { to: '/', label: 'Services' },
+    ...browseLinks,
     ...(user.value
       ? [
           { to: '/orders', label: 'Orders' },
-          { to: '/assistant', label: 'Assistant' },
+          { to: '/profile', label: 'Profile' },
           { to: '/admin/services', label: 'Admin Services' },
+          { to: '/admin/orders', label: 'Admin Orders' },
           { to: '/admin/payments', label: 'Admin Payments' },
           { to: '/admin/assistant', label: 'Admin Assistant' },
         ]

@@ -239,4 +239,69 @@ describe('CatalogService', () => {
     expect(logs.items[0].beforeStatus).toBe('ACTIVE');
     expect(logs.items[0].afterStatus).toBeUndefined();
   });
+
+  it('filters services by date and price range', async () => {
+    const { service } = createService();
+
+    const result = await service.listServices({
+      type: ServiceType.PACKAGE,
+      date: '2026-04-18',
+      minPriceAmount: 300,
+      maxPriceAmount: 450,
+      status: 'ACTIVE',
+      page: { limit: 20, offset: 0 },
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]?.id).toBe('svc_pkg_beijing_001');
+
+    const noMatch = await service.listServices({
+      type: ServiceType.PACKAGE,
+      date: '2026-04-18',
+      minPriceAmount: 450,
+      status: 'ACTIVE',
+      page: { limit: 20, offset: 0 },
+    });
+
+    expect(noMatch.total).toBe(0);
+  });
+
+  it('reserves and releases resource availability by time slot', async () => {
+    const { service } = createService();
+    const slot = '2026-04-19 10:00 Shanghai';
+
+    const assigned = await service.reserveServiceAssignment({
+      id: 'svc_guide_shanghai_001',
+      timeSlot: slot,
+      travelerCount: 2,
+    });
+
+    expect(assigned?.id).toBe('guide_sh_amy');
+
+    const reservedState = await service.getServiceOrThrow(
+      'svc_guide_shanghai_001',
+    );
+    expect(reservedState.availableTimeSlots).not.toContain(slot);
+    expect(
+      reservedState.resources?.find(
+        (resource) => resource.id === 'guide_sh_amy',
+      )?.availableTimeSlots,
+    ).not.toContain(slot);
+
+    await service.releaseServiceAssignment({
+      id: 'svc_guide_shanghai_001',
+      resourceId: 'guide_sh_amy',
+      timeSlot: slot,
+    });
+
+    const releasedState = await service.getServiceOrThrow(
+      'svc_guide_shanghai_001',
+    );
+    expect(releasedState.availableTimeSlots).toContain(slot);
+    expect(
+      releasedState.resources?.find(
+        (resource) => resource.id === 'guide_sh_amy',
+      )?.availableTimeSlots,
+    ).toContain(slot);
+  });
 });

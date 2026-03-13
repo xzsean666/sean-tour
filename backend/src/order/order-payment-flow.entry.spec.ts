@@ -86,6 +86,16 @@ type AdminUpdatePaymentData = {
   };
 };
 
+type AdminOrdersData = {
+  adminOrders?: {
+    total: number;
+    items: Array<{
+      bookingId: string;
+      serviceId: string;
+    }>;
+  };
+};
+
 function getHttpServer(app: INestApplication): Parameters<typeof request>[0] {
   return app.getHttpServer() as Parameters<typeof request>[0];
 }
@@ -299,6 +309,7 @@ describe('Order/payment flow integration', () => {
             startDate,
             endDate,
             travelerCount: 1,
+            timeSlot: '2026-04-18 09:00 Beijing',
           },
         },
       });
@@ -371,6 +382,7 @@ describe('Order/payment flow integration', () => {
             startDate: '2026-06-01',
             endDate: '2026-06-03',
             travelerCount: 1,
+            timeSlot: '2026-04-18 09:00 Beijing',
           },
         },
       });
@@ -497,6 +509,43 @@ describe('Order/payment flow integration', () => {
     expect(forbiddenResponse.status).toBe(200);
     expect(forbiddenBody.errors?.[0]?.message).toContain(
       'Booking access denied',
+    );
+  });
+
+  it('filters admin orders by bookingId and serviceId', async () => {
+    const server = getHttpServer(app);
+    const bookingId = await createBookingForUser(server, userToken);
+
+    const response = await request(server)
+      .post('/graphql')
+      .set('admin_auth_code', adminAuthCode)
+      .send({
+        query: `
+          query AdminOrders($input: OrderListInput) {
+            adminOrders(input: $input) {
+              total
+              items {
+                bookingId
+                serviceId
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            bookingId,
+            serviceId: 'svc_pkg_beijing_001',
+          },
+        },
+      });
+
+    const body = response.body as GraphQLResponse<AdminOrdersData>;
+    expect(response.status).toBe(200);
+    expect(body.errors).toBeUndefined();
+    expect(body.data?.adminOrders?.total).toBe(1);
+    expect(body.data?.adminOrders?.items[0]?.bookingId).toBe(bookingId);
+    expect(body.data?.adminOrders?.items[0]?.serviceId).toBe(
+      'svc_pkg_beijing_001',
     );
   });
 

@@ -1,4 +1,10 @@
 import { requestBackendGraphQL } from "./backendGraphqlClient";
+import type {
+  BookingStatus,
+  ServiceCapacity,
+  ServiceContact,
+  ServiceResource,
+} from "./travelService";
 
 export type ServiceType = "PACKAGE" | "GUIDE" | "CAR" | "ASSISTANT";
 
@@ -12,7 +18,43 @@ export interface AdminServiceItem {
   languages: string[];
   images: string[];
   basePriceAmount: number;
+  cancellationPolicy?: string;
+  availableTimeSlots: string[];
+  capacity?: ServiceCapacity;
+  supportContact?: ServiceContact;
+  resources: ServiceResource[];
+  voucherTemplate?: string;
   updatedAt: string;
+}
+
+export interface AdminServiceResourceScheduleBooking {
+  bookingId: string;
+  userId: string;
+  bookingStatus: BookingStatus;
+  startDate: string;
+  endDate: string;
+  timeSlot?: string;
+  travelerCount: number;
+  assignedResourceId?: string;
+  assignedResourceLabel?: string;
+}
+
+export interface AdminServiceResourceScheduleItem {
+  resourceId: string;
+  resourceLabel: string;
+  status: string;
+  languages: string[];
+  seats?: number;
+  availableTimeSlots: string[];
+  bookings: AdminServiceResourceScheduleBooking[];
+  conflictTimeSlots: string[];
+}
+
+export interface AdminServiceResourceSchedule {
+  serviceId: string;
+  serviceTitle: string;
+  resources: AdminServiceResourceScheduleItem[];
+  unassignedBookings: AdminServiceResourceScheduleBooking[];
 }
 
 export type ServiceAuditAction = "UPSERT" | "STATUS_CHANGE" | "DELETE";
@@ -61,6 +103,12 @@ export type AdminUpsertServiceInput = {
   images?: string[];
   languages: string[];
   basePriceAmount: number;
+  cancellationPolicy?: string;
+  availableTimeSlots?: string[];
+  capacity?: ServiceCapacity;
+  supportContact?: ServiceContact;
+  resources?: ServiceResource[];
+  voucherTemplate?: string;
   status?: string;
   packageDetail?: {
     durationDays: number;
@@ -82,26 +130,38 @@ export type AdminUpsertServiceInput = {
   };
 };
 
+type ServiceItemGraphQL = {
+  id: string;
+  type: ServiceType;
+  title: string;
+  city: string;
+  description: string;
+  status: string;
+  updatedAt: string;
+  languages: string[];
+  images: string[];
+  cancellationPolicy?: string;
+  availableTimeSlots: string[];
+  capacity?: ServiceCapacity;
+  supportContact?: ServiceContact;
+  resources: ServiceResource[];
+  voucherTemplate?: string;
+  basePrice: {
+    amount: number;
+    currency: "USDT";
+  };
+};
+
 type ServiceListGraphQL = {
   serviceList: {
-    items: Array<{
-      id: string;
-      type: ServiceType;
-      title: string;
-      city: string;
-      description: string;
-      status: string;
-      updatedAt: string;
-      languages: string[];
-      images: string[];
-      basePrice: {
-        amount: number;
-        currency: "USDT";
-      };
-    }>;
+    items: ServiceItemGraphQL[];
     total: number;
     hasMore: boolean;
   };
+};
+
+type ServiceItemDetailGraphQL = {
+  serviceItem: ServiceItemGraphQL;
 };
 
 type ServiceDetailGraphQL = {
@@ -131,39 +191,11 @@ type ServiceDetailGraphQL = {
 };
 
 type AdminUpsertServiceGraphQL = {
-  adminUpsertService: {
-    id: string;
-    type: ServiceType;
-    title: string;
-    city: string;
-    description: string;
-    status: string;
-    updatedAt: string;
-    languages: string[];
-    images: string[];
-    basePrice: {
-      amount: number;
-      currency: "USDT";
-    };
-  };
+  adminUpsertService: ServiceItemGraphQL;
 };
 
 type AdminSetServiceStatusGraphQL = {
-  adminSetServiceStatus: {
-    id: string;
-    type: ServiceType;
-    title: string;
-    city: string;
-    description: string;
-    status: string;
-    updatedAt: string;
-    languages: string[];
-    images: string[];
-    basePrice: {
-      amount: number;
-      currency: "USDT";
-    };
-  };
+  adminSetServiceStatus: ServiceItemGraphQL;
 };
 
 type AdminDeleteServiceGraphQL = {
@@ -189,9 +221,48 @@ type AdminServiceAuditLogsGraphQL = {
   };
 };
 
-function parseServiceItem(
-  item: ServiceListGraphQL["serviceList"]["items"][number],
-): AdminServiceItem {
+type AdminServiceResourceScheduleGraphQL = {
+  adminServiceResourceSchedule: AdminServiceResourceSchedule;
+};
+
+const adminServiceFields = `
+  id
+  type
+  title
+  city
+  description
+  status
+  updatedAt
+  languages
+  images
+  cancellationPolicy
+  availableTimeSlots
+  voucherTemplate
+  capacity {
+    min
+    max
+    remaining
+  }
+  supportContact {
+    name
+    channel
+    value
+  }
+  resources {
+    id
+    label
+    status
+    languages
+    seats
+    availableTimeSlots
+  }
+  basePrice {
+    amount
+    currency
+  }
+`;
+
+function parseServiceItem(item: ServiceItemGraphQL): AdminServiceItem {
   return {
     id: item.id,
     type: item.type,
@@ -199,24 +270,36 @@ function parseServiceItem(
     city: item.city,
     description: item.description,
     status: item.status,
-    languages: item.languages,
+    languages: item.languages || [],
     images: item.images || [],
     basePriceAmount: item.basePrice.amount,
+    cancellationPolicy: item.cancellationPolicy,
+    availableTimeSlots: item.availableTimeSlots || [],
+    capacity: item.capacity,
+    supportContact: item.supportContact,
+    resources: item.resources || [],
+    voucherTemplate: item.voucherTemplate,
     updatedAt: item.updatedAt,
   };
 }
 
 function getAdminAuthCodeOrThrow(): string {
-  const adminAuthCode = (import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
+  const adminAuthCode = (
+    import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || ""
+  ).trim();
 
   if (!adminAuthCode) {
-    throw new Error("VITE_BACKEND_ADMIN_AUTH_CODE is required for admin operations.");
+    throw new Error(
+      "VITE_BACKEND_ADMIN_AUTH_CODE is required for admin operations.",
+    );
   }
 
   return adminAuthCode;
 }
 
-function toAdminServiceDetail(payload: ServiceDetailGraphQL["serviceDetail"]): AdminServiceDetail {
+function toAdminServiceDetail(
+  payload: ServiceDetailGraphQL["serviceDetail"],
+): AdminServiceDetail {
   if (payload.__typename === "PackageServiceDetail") {
     return {
       type: "PACKAGE",
@@ -268,19 +351,7 @@ export const adminCatalogService = {
         query ServiceListForAdmin($input: ServiceListInput) {
           serviceList(input: $input) {
             items {
-              id
-              type
-              title
-              city
-              description
-              status
-              updatedAt
-              languages
-              images
-              basePrice {
-                amount
-                currency
-              }
+              ${adminServiceFields}
             }
             total
             hasMore
@@ -302,6 +373,23 @@ export const adminCatalogService = {
       total: data.serviceList.total,
       hasMore: data.serviceList.hasMore,
     };
+  },
+
+  async getServiceItem(serviceId: string): Promise<AdminServiceItem> {
+    const data = await requestBackendGraphQL<ServiceItemDetailGraphQL>({
+      query: `
+        query ServiceItemForAdmin($id: String!) {
+          serviceItem(id: $id) {
+            ${adminServiceFields}
+          }
+        }
+      `,
+      variables: {
+        id: serviceId,
+      },
+    });
+
+    return parseServiceItem(data.serviceItem);
   },
 
   async getServiceDetail(serviceId: string): Promise<AdminServiceDetail> {
@@ -346,19 +434,7 @@ export const adminCatalogService = {
       query: `
         mutation AdminUpsertService($input: UpsertServiceInput!) {
           adminUpsertService(input: $input) {
-            id
-            type
-            title
-            city
-            description
-            status
-            updatedAt
-            languages
-            images
-            basePrice {
-              amount
-              currency
-            }
+            ${adminServiceFields}
           }
         }
       `,
@@ -382,19 +458,7 @@ export const adminCatalogService = {
       query: `
         mutation AdminSetServiceStatus($input: SetServiceStatusInput!) {
           adminSetServiceStatus(input: $input) {
-            id
-            type
-            title
-            city
-            description
-            status
-            updatedAt
-            languages
-            images
-            basePrice {
-              amount
-              currency
-            }
+            ${adminServiceFields}
           }
         }
       `,
@@ -488,5 +552,63 @@ export const adminCatalogService = {
       offset: data.adminServiceAuditLogs.offset,
       hasMore: data.adminServiceAuditLogs.hasMore,
     };
+  },
+
+  async getServiceResourceSchedule(
+    serviceId: string,
+    date?: string,
+  ): Promise<AdminServiceResourceSchedule> {
+    const adminAuthCode = getAdminAuthCodeOrThrow();
+
+    const data = await requestBackendGraphQL<AdminServiceResourceScheduleGraphQL>({
+      query: `
+        query AdminServiceResourceSchedule($serviceId: String!, $date: String) {
+          adminServiceResourceSchedule(serviceId: $serviceId, date: $date) {
+            serviceId
+            serviceTitle
+            resources {
+              resourceId
+              resourceLabel
+              status
+              languages
+              seats
+              availableTimeSlots
+              conflictTimeSlots
+              bookings {
+                bookingId
+                userId
+                bookingStatus
+                startDate
+                endDate
+                timeSlot
+                travelerCount
+                assignedResourceId
+                assignedResourceLabel
+              }
+            }
+            unassignedBookings {
+              bookingId
+              userId
+              bookingStatus
+              startDate
+              endDate
+              timeSlot
+              travelerCount
+              assignedResourceId
+              assignedResourceLabel
+            }
+          }
+        }
+      `,
+      variables: {
+        serviceId,
+        ...(date ? { date } : {}),
+      },
+      headers: {
+        admin_auth_code: adminAuthCode,
+      },
+    });
+
+    return data.adminServiceResourceSchedule;
   },
 };

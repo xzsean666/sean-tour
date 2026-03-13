@@ -1,7 +1,7 @@
 # Build Progress
 
 ## Meta
-- Last Updated: 2026-03-04
+- Last Updated: 2026-03-13
 - Owner: Sean + Codex
 - Current Phase: MVP Capability Completion
 
@@ -20,6 +20,7 @@
 
 ## Current Progress
 - 已完成：
+  - 已完成 `docs/crypto-travel-cn-design.md` 与当前前后端实现的差距复核，确认剩余缺口主要集中在：服务详情/分类路由、用户资料与通知模块、容量/排班模型、订单全状态流转与管理端订单视图。
   - 后端已接入 `catalog + booking + payment` 三个 GraphQL 模块骨架，并在 `app.module.ts` 完成注册。
   - `catalog` 已切换到 `travel_kv` 持久化，支持服务列表筛选、分页和服务详情 Union。
   - `booking` 已切换到 `travel_kv` 持久化，支持创建预订、我的预订分页、预订详情、取消预订（含状态约束）。
@@ -85,12 +86,35 @@
   - 已新增支付链配置项：`PAYMENT_BSC_RPC_URL/PAYMENT_BSC_CHAIN_ID/PAYMENT_USDT_BSC_TOKEN_ADDRESS/PAYMENT_BATCH_CALL_ADDRESS/PAYMENT_MASTER_PRIVATE_KEY/PAYMENT_ORDER_EXPIRY_HOURS/PAYMENT_TOKEN_DECIMALS`。
   - 已新增 `payment-wallet.service.spec.ts`，覆盖“配置缺失回退”与“完整配置下调用 Web3Wallet.createPaymentOrder”两条关键路径。
   - 关键验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- payment/payment-wallet.service.spec.ts payment/payment.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已完成用户侧信息架构补齐：新增 `/packages`、`/guides`、`/cars` 列表/详情页，首页改为进入详情页后再选日期/人数/时段创建 booking；同时补齐 `/profile`、`/faq`、`/support` 与 `/assistant` 介绍页。
+  - 已完成后端 `user` / `notification` 领域落地：新增用户资料查询/更新/导出/删除、通知列表/已读能力，并将敏感资料字段加密存储。
+  - 已完成 `catalog + booking + order` 数据扩展：服务支持 `capacity/availableTimeSlots/supportContact/voucherTemplate/cancellationPolicy`，booking 支持时段与容量校验，order 聚合支持联系人、凭证、退款状态和更完整支付状态。
+  - 已完成管理端补齐：新增 `/admin/orders`，支持按用户/booking/payment 状态筛选、查看订单详情、检查 payment timeline，并推动 booking 状态流转；`/admin/services` 同步支持编辑容量、时段、联系人、凭证模板等字段。
+  - 前端订单与 checkout 已适配 `PARTIALLY_PAID/UNDERPAID/REFUNDING/REFUNDED`，订单详情已展示联系信息、凭证与取消政策。
+  - 已补齐列表页筛选能力：`serviceList` 现支持城市、语言、日期、价格区间和分页；首页与分类页筛选栏已同步接入。
+  - 已补齐资源级排班 MVP：服务支持 `resources` roster 录入与展示，booking 会按 `timeSlot` 自动分配导游/车辆/助手资源，取消后自动回补时段；订单页与 admin orders 已展示指派资源。
+  - 本轮验证通过：`pnpm --dir frontend install`、`pnpm --dir frontend build`、`pnpm --dir backend install`、`pnpm --dir backend build`、`pnpm --dir backend lint`、`pnpm --dir backend exec jest --runInBand`。
+  - 资源排班本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已补齐资源运营第一版：新增 `adminAssignableBookingResources` 查询与 `adminReassignBookingResource` mutation，`/admin/orders` 现可查看当前可改派资源并执行人工改派。
+  - 资源改派本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已补齐资源排班面板：新增 `adminServiceResourceSchedule` 查询，`/admin/services` 现可查看资源占用、未指派 booking 与冲突槽位摘要。
+  - 资源排班面板本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已补齐资源运营跨页闭环：`adminOrders` 新增 `serviceId/bookingId` 过滤，`/admin/services` 排班面板中的 booking 现可直接跳到 `/admin/orders` 对应筛选结果。
+  - 跨页联动本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已补齐排班面板内直接改派：`/admin/services` 现可为资源卡片中的 booking 和未指派 booking 直接加载可改派资源并提交改派，无需先跳转 `/admin/orders`。
+  - 面板内改派本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已补齐排班面板待处理队列：`/admin/services` 现统一展示冲突 booking 与未指派 booking，并可直接在队列中加载可改派资源、提交改派或跳转对应订单。
+  - 待处理队列本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已增强资源运营视图：`/admin/services` 新增按 `timeSlot` 聚合的 `Dispatch Timeline`、按日期聚合的 `Date Load` 卡片，并支持点击日期卡片直接套用排班日期过滤。
+  - 已补齐排班日期过滤：`adminServiceResourceSchedule` 新增可选 `date` 参数，前端排班面板支持按日筛选并在刷新/改派后保留当前日期视图；同时补充 `booking.service.spec.ts` 的日期过滤回归。
+  - 资源运营视图增强本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
 - 进行中：
-  - 助手模块上线后的端到端手工回归（用户提单 + 管理员派单 + 状态流转）。
+  - 继续把当前 MVP 能力从“功能闭环完整”提升到“运营精细化”，重点是 admin 权限模型与更强的资源排班运营视图。
 - 下一步：
-  - 增强助手运营面板能力（批量状态推进、导出、会话 SLA 超时标记）。
+  - 为 `user/profile`、`notification`、`admin orders`、`capacity/time slot` 增补后端单测与端到端回归。
+  - 将当前排班面板继续演进为更完整的日历视图，并补齐 URL 可分享的筛选状态。
   - 配置并联调真实 USDT 收款环境参数（RPC/Token/BatchCall/MasterKey），完成链上订单创建与对账验证。
-  - 补充用户侧服务详情与下单参数（日期/人数）显式编辑，减少硬编码默认值。
+  - 收口 admin 权限模型，避免当前仅依赖 `admin_auth_code` 的粗粒度运营入口。
 
 ## Blockers
 - 暂无硬阻塞。
@@ -149,3 +173,13 @@
 - 2026-03-04: 后端 `assistant` 新增运营能力：`adminBatchAssignAssistantSessions` 批量分配 mutation + `adminAssistantSessions.assignedAgent` 过滤，并补充 `assistant.service.spec.ts` 对应回归用例。
 - 2026-03-04: 前端新增助手运营 API/页面：`src/api/adminAssistantService.ts` + `/admin/assistant`，打通助手会话筛选、批量分配、单条更新闭环。
 - 2026-03-04: 前端完成核心业务页 UI 升级（`App` 导航壳层 + `Services/Checkout/Orders/OrderDetail/Assistant`），统一为旅游平台视觉与信息结构。
+- 2026-03-13: 完成 `docs/crypto-travel-cn-design.md` 对照评审，确认当前未完成项集中在服务详情路由、用户资料/通知、容量与排班、订单全状态流转及管理端订单视图。
+- 2026-03-13: 补齐设计文档缺口第一轮实现：新增 `/packages|/guides|/cars|profile|faq|support|admin/orders` 页面与路由，落地 `user/notification` 模块、订单联系信息/凭证、容量与时段字段、扩展支付/退款状态，并通过 `frontend build`、`backend build`、`backend lint`、`backend jest --runInBand` 验证。
+- 2026-03-13: 继续补齐列表页能力：`serviceList` 新增日期与价格区间筛选，首页与分类页 UI 同步接入，并补充 `catalog.service.spec.ts` 回归后再次通过 `frontend build`、`backend build`、`backend lint`、`backend jest --runInBand`。
+- 2026-03-13: 新增资源级排班 MVP：`catalog.resources` roster、booking 自动资源指派与取消回补、订单/admin 视图中的指派资源展示，并补充 `catalog.service.spec.ts` 与 `booking.service.spec.ts` 回归。
+- 2026-03-13: 新增资源运营第一版：admin 现在可按 booking 查询可改派资源并执行人工改派；同步扩展 order 聚合字段并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 验证。
+- 2026-03-13: 新增资源排班面板：`adminServiceResourceSchedule` 聚合服务级资源占用与未指派 booking，前端 `/admin/services` 已展示资源负载和冲突摘要，并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 验证。
+- 2026-03-13: 新增资源运营跨页闭环：`adminOrders` 支持 `serviceId/bookingId` 过滤，`/admin/services` 排班面板中的 booking 可直接跳转到订单运营页，并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 验证。
+- 2026-03-13: 新增排班面板内直接改派：`/admin/services` 可直接加载 booking 的可改派资源并提交改派，减少在 `/admin/services` 与 `/admin/orders` 之间来回切换，并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 验证。
+- 2026-03-13: 新增排班面板待处理队列：`/admin/services` 统一展示冲突 booking 与未指派 booking，并直接复用改派动作；同时补充 `booking.service.spec.ts` 冲突时段回归，验证 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 通过。
+ - 2026-03-13: 增强资源运营视图：新增 `Dispatch Timeline`、`Date Load` 日期负载卡片和 `adminServiceResourceSchedule(date)` 日期过滤，前端排班面板支持按日查看并保留当前筛选回刷；同时补充 `booking.service.spec.ts` 日期过滤回归并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand`。

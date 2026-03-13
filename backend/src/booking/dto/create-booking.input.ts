@@ -13,4 +13,7 @@ export class CreateBookingInput {
 
   @Field(() => Int)
   travelerCount: number;
+
+  @Field({ nullable: true })
+  timeSlot?: string;
 }

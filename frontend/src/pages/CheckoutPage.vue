@@ -6,7 +6,11 @@ import Card from "primevue/card";
 import Message from "primevue/message";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
-import { travelService, type CheckoutPreview } from "../api/travelService";
+import {
+  travelService,
+  type CheckoutPreview,
+  type PaymentStatus,
+} from "../api/travelService";
 
 const route = useRoute();
 const router = useRouter();
@@ -19,12 +23,32 @@ const copySuccess = ref("");
 const checkout = ref<CheckoutPreview | null>(null);
 
 const bookingId = computed(() => String(route.params.bookingId || ""));
+const showPaymentAddress = computed(
+  () => !!checkout.value && checkout.value.payAddress !== "-",
+);
+
+function shouldPoll(status: PaymentStatus): boolean {
+  return (
+    status === "PENDING" ||
+    status === "PARTIALLY_PAID" ||
+    status === "UNDERPAID"
+  );
+}
+
 const paymentStatusSeverity = computed(() => {
   if (!checkout.value) {
     return "warn";
   }
 
+  if (checkout.value.paymentStatus === "REFUNDING") {
+    return "info";
+  }
+
   if (checkout.value.paymentStatus === "PAID") {
+    return "success";
+  }
+
+  if (checkout.value.paymentStatus === "REFUNDED") {
     return "success";
   }
 
@@ -44,8 +68,24 @@ const statusDescription = computed(() => {
     return "Payment confirmed. Redirecting to order detail...";
   }
 
+  if (checkout.value.paymentStatus === "PARTIALLY_PAID") {
+    return "Partial payment detected. Send the remaining amount to complete checkout.";
+  }
+
+  if (checkout.value.paymentStatus === "UNDERPAID") {
+    return "This transfer was marked underpaid. Wait for ops confirmation or complete the difference if instructed.";
+  }
+
   if (checkout.value.paymentStatus === "EXPIRED") {
     return "Payment intent expired. Please create a fresh payment from checkout.";
+  }
+
+  if (checkout.value.paymentStatus === "REFUNDING") {
+    return "Refund is in progress. Check the order detail page for the latest update.";
+  }
+
+  if (checkout.value.paymentStatus === "REFUNDED") {
+    return "Refund completed. Your order detail now reflects the final state.";
   }
 
   return "Waiting for on-chain transfer and confirmations.";
@@ -99,7 +139,7 @@ async function loadCheckout(options?: { silent?: boolean }) {
       return;
     }
 
-    if (preview.paymentStatus === "PENDING") {
+    if (shouldPoll(preview.paymentStatus)) {
       startPolling();
       return;
     }
@@ -180,6 +220,13 @@ onUnmounted(() => {
             <dt class="text-slate-500">Date</dt>
             <dd class="font-semibold text-slate-900">{{ checkout.travelDateRange }}</dd>
           </div>
+          <div
+            v-if="checkout.timeSlot"
+            class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
+          >
+            <dt class="text-slate-500">Time Slot</dt>
+            <dd class="font-semibold text-slate-900">{{ checkout.timeSlot }}</dd>
+          </div>
           <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
             <dt class="text-slate-500">Network</dt>
             <dd class="font-semibold text-slate-900">
@@ -225,7 +272,10 @@ onUnmounted(() => {
             {{ statusDescription }}
           </p>
 
-          <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+          <div
+            v-if="showPaymentAddress"
+            class="rounded-2xl border border-slate-200 bg-white px-3 py-3"
+          >
             <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Payment Address</p>
             <p class="mt-2 break-all rounded-xl bg-slate-100 px-2 py-2 font-mono text-xs text-slate-800">
               {{ checkout.payAddress }}
@@ -241,7 +291,7 @@ onUnmounted(() => {
           <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
             <p>1. Send exact amount in USDT on BSC/ERC20.</p>
             <p class="mt-1">2. Wait for chain confirmations.</p>
-            <p class="mt-1">3. This page auto-refreshes every 15 seconds.</p>
+            <p class="mt-1">3. This page auto-refreshes every 15 seconds while payment is actionable.</p>
           </div>
 
           <Button

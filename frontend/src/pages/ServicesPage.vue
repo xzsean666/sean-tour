@@ -12,21 +12,21 @@ import {
   type ServiceItem,
   type ServiceType,
 } from "../api/travelService";
-import { useAuthStore } from "../stores/auth.store";
 
 type ServiceTypeFilter = "ALL" | ServiceType;
 
 const PAGE_SIZE = 9;
 
 const router = useRouter();
-const { user } = useAuthStore();
 
 const typeFilter = ref<ServiceTypeFilter>("ALL");
 const cityFilter = ref("");
 const languageFilter = ref("");
+const dateFilter = ref("");
+const minPriceFilter = ref("");
+const maxPriceFilter = ref("");
 
 const loading = ref(false);
-const checkoutLoadingServiceId = ref<string | null>(null);
 
 const errorMessage = ref("");
 const services = ref<ServiceItem[]>([]);
@@ -39,10 +39,18 @@ const hasPrevPage = computed(() => offset.value > 0);
 const pageStart = computed(() => (services.value.length > 0 ? offset.value + 1 : 0));
 const pageEnd = computed(() => offset.value + services.value.length);
 
-function toIsoDate(offsetDays: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
+function normalizePriceFilter(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error("Price filter must be a non-negative number.");
+  }
+
+  return parsed;
 }
 
 function getTypeSeverity(
@@ -149,6 +157,10 @@ async function loadServices(nextOffset: number = offset.value): Promise<void> {
       type: typeFilter.value === "ALL" ? undefined : typeFilter.value,
       city: cityFilter.value,
       language: languageFilter.value,
+      date: dateFilter.value,
+      minPriceAmount: normalizePriceFilter(minPriceFilter.value),
+      maxPriceAmount: normalizePriceFilter(maxPriceFilter.value),
+      status: "ACTIVE",
       limit: PAGE_SIZE,
       offset: Math.max(nextOffset, 0),
     });
@@ -185,36 +197,23 @@ async function goNextPage(): Promise<void> {
   await loadServices(offset.value + PAGE_SIZE);
 }
 
-async function startCheckout(serviceId: string): Promise<void> {
-  errorMessage.value = "";
-
-  if (!user.value) {
-    await router.push({
-      path: "/auth/login",
-      query: {
-        redirect: `/services?serviceId=${serviceId}`,
-      },
-    });
+async function openServiceDetail(service: ServiceItem): Promise<void> {
+  if (service.type === "PACKAGE") {
+    await router.push(`/packages/${service.id}`);
     return;
   }
 
-  checkoutLoadingServiceId.value = serviceId;
-
-  try {
-    const { bookingId } = await travelService.createBooking({
-      serviceId,
-      startDate: toIsoDate(14),
-      endDate: toIsoDate(16),
-      travelerCount: 2,
-    });
-
-    await router.push(`/checkout/${bookingId}`);
-  } catch (error) {
-    errorMessage.value =
-      error instanceof Error ? error.message : "Failed to create booking.";
-  } finally {
-    checkoutLoadingServiceId.value = null;
+  if (service.type === "GUIDE") {
+    await router.push(`/guides/${service.id}`);
+    return;
   }
+
+  if (service.type === "CAR") {
+    await router.push(`/cars/${service.id}`);
+    return;
+  }
+
+  await router.push("/assistant");
 }
 
 onMounted(async () => {
@@ -251,11 +250,42 @@ onMounted(async () => {
         <p class="text-xs text-teal-100/90">All prices are fixed in USDT.</p>
       </div>
     </div>
+
+    <div class="relative mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <RouterLink
+        to="/packages"
+        class="rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-sm text-teal-50 transition hover:bg-white/14"
+      >
+        <p class="font-semibold text-white">Packages</p>
+        <p class="mt-2 text-xs leading-5 text-teal-100/90">Multi-day curated China itineraries.</p>
+      </RouterLink>
+      <RouterLink
+        to="/guides"
+        class="rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-sm text-teal-50 transition hover:bg-white/14"
+      >
+        <p class="font-semibold text-white">Guides</p>
+        <p class="mt-2 text-xs leading-5 text-teal-100/90">Private local experts and interpreters.</p>
+      </RouterLink>
+      <RouterLink
+        to="/cars"
+        class="rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-sm text-teal-50 transition hover:bg-white/14"
+      >
+        <p class="font-semibold text-white">Cars</p>
+        <p class="mt-2 text-xs leading-5 text-teal-100/90">Airport pickup and chauffeur service.</p>
+      </RouterLink>
+      <RouterLink
+        to="/assistant"
+        class="rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-sm text-teal-50 transition hover:bg-white/14"
+      >
+        <p class="font-semibold text-white">Assistant</p>
+        <p class="mt-2 text-xs leading-5 text-teal-100/90">Remote local support and coordination.</p>
+      </RouterLink>
+    </div>
   </section>
 
   <Card class="mt-5 !rounded-3xl !border !border-slate-200/80 !bg-white/95">
     <template #content>
-      <div class="grid gap-3 lg:grid-cols-[170px_1fr_1fr_auto]">
+      <div class="grid gap-3 lg:grid-cols-[170px_1fr_1fr_220px_180px_180px_auto]">
         <label class="space-y-1">
           <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Type</span>
           <select
@@ -280,6 +310,39 @@ onMounted(async () => {
             Language
           </span>
           <InputText v-model="languageFilter" placeholder="English / Chinese" class="w-full" />
+        </label>
+
+        <label class="space-y-1">
+          <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Date</span>
+          <input
+            v-model="dateFilter"
+            type="date"
+            class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+          />
+        </label>
+
+        <label class="space-y-1">
+          <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Min USDT</span>
+          <input
+            v-model="minPriceFilter"
+            type="number"
+            min="0"
+            step="1"
+            class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+            placeholder="0"
+          />
+        </label>
+
+        <label class="space-y-1">
+          <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Max USDT</span>
+          <input
+            v-model="maxPriceFilter"
+            type="number"
+            min="0"
+            step="1"
+            class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+            placeholder="500"
+          />
         </label>
 
         <div class="flex items-end">
@@ -336,13 +399,11 @@ onMounted(async () => {
           </p>
 
           <Button
-            label="Create Booking"
+            label="View Detail"
             icon="pi pi-arrow-right"
             icon-pos="right"
             class="mt-4 !inline-flex !w-full !justify-center !rounded-xl !bg-slate-900 !px-4 !py-2.5 !text-sm !font-semibold !text-white hover:!bg-slate-800"
-            :loading="checkoutLoadingServiceId === service.id"
-            :disabled="checkoutLoadingServiceId !== null"
-            @click="startCheckout(service.id)"
+            @click="openServiceDetail(service)"
           />
         </template>
       </Card>

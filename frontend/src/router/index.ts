@@ -2,13 +2,20 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { initAuthStore, useAuthStore } from '../stores/auth.store';
 
 const ServicesPage = () => import('../pages/ServicesPage.vue');
+const ServiceCatalogPage = () => import('../pages/ServiceCatalogPage.vue');
+const ServiceDetailPage = () => import('../pages/ServiceDetailPage.vue');
 const CheckoutPage = () => import('../pages/CheckoutPage.vue');
 const OrdersPage = () => import('../pages/OrdersPage.vue');
 const OrderDetailPage = () => import('../pages/OrderDetailPage.vue');
+const ProfilePage = () => import('../pages/ProfilePage.vue');
+const FaqPage = () => import('../pages/FaqPage.vue');
+const SupportPage = () => import('../pages/SupportPage.vue');
+const AssistantLandingPage = () => import('../pages/AssistantLandingPage.vue');
 const AssistantPage = () => import('../pages/AssistantPage.vue');
 const AdminServicesPage = () => import('../pages/AdminServicesPage.vue');
 const AdminPaymentsPage = () => import('../pages/AdminPaymentsPage.vue');
 const AdminAssistantPage = () => import('../pages/AdminAssistantPage.vue');
+const AdminOrdersPage = () => import('../pages/AdminOrdersPage.vue');
 const LoginPage = () => import('../pages/auth/LoginPage.vue');
 const RegisterPage = () => import('../pages/auth/RegisterPage.vue');
 const ForgotPasswordPage = () => import('../pages/auth/ForgotPasswordPage.vue');
@@ -24,6 +31,62 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/services',
     redirect: '/',
+  },
+  {
+    path: '/packages',
+    name: 'packages',
+    component: ServiceCatalogPage,
+    meta: {
+      serviceType: 'PACKAGE',
+      pageTitle: 'China Travel Packages',
+    },
+  },
+  {
+    path: '/packages/:id',
+    name: 'package-detail',
+    component: ServiceDetailPage,
+    meta: { serviceType: 'PACKAGE' },
+  },
+  {
+    path: '/guides',
+    name: 'guides',
+    component: ServiceCatalogPage,
+    meta: {
+      serviceType: 'GUIDE',
+      pageTitle: 'Private Local Guides',
+    },
+  },
+  {
+    path: '/guides/:id',
+    name: 'guide-detail',
+    component: ServiceDetailPage,
+    meta: { serviceType: 'GUIDE' },
+  },
+  {
+    path: '/cars',
+    name: 'cars',
+    component: ServiceCatalogPage,
+    meta: {
+      serviceType: 'CAR',
+      pageTitle: 'Private Chauffeur & Car Service',
+    },
+  },
+  {
+    path: '/cars/:id',
+    name: 'car-detail',
+    component: ServiceDetailPage,
+    meta: { serviceType: 'CAR' },
+  },
+  {
+    path: '/assistant',
+    name: 'assistant-landing',
+    component: AssistantLandingPage,
+  },
+  {
+    path: '/assistant/requests',
+    name: 'assistant',
+    component: AssistantPage,
+    meta: { requiresAuth: true },
   },
   {
     path: '/checkout/:bookingId',
@@ -44,10 +107,20 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/assistant',
-    name: 'assistant',
-    component: AssistantPage,
+    path: '/profile',
+    name: 'profile',
+    component: ProfilePage,
     meta: { requiresAuth: true },
+  },
+  {
+    path: '/faq',
+    name: 'faq',
+    component: FaqPage,
+  },
+  {
+    path: '/support',
+    name: 'support',
+    component: SupportPage,
   },
   {
     path: '/admin/services',
@@ -59,6 +132,12 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/payments',
     name: 'admin-payments',
     component: AdminPaymentsPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/orders',
+    name: 'admin-orders',
+    component: AdminOrdersPage,
     meta: { requiresAuth: true },
   },
   {

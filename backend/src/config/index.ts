@@ -73,6 +73,9 @@ export const config = {
     WECHAT_APP_ID: process.env.WECHAT_APP_ID ?? '',
     WECHAT_APP_SECRET: process.env.WECHAT_APP_SECRET ?? '',
   },
+  privacy: {
+    DATA_SECRET: process.env.USER_DATA_SECRET ?? process.env.JWT_SECRET ?? '',
+  },
   payment: {
     CALLBACK_SECRET: process.env.PAYMENT_CALLBACK_SECRET ?? '',
     REPLAY_COOLDOWN_SECONDS: Math.max(

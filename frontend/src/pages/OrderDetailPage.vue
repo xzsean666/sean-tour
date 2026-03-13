@@ -6,7 +6,13 @@ import Card from "primevue/card";
 import Message from "primevue/message";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
-import { travelService, type OrderItem, type PaymentEvent } from "../api/travelService";
+import {
+  travelService,
+  type BookingStatus,
+  type OrderItem,
+  type PaymentEvent,
+  type PaymentStatus,
+} from "../api/travelService";
 
 const route = useRoute();
 
@@ -16,6 +22,17 @@ const order = ref<OrderItem | null>(null);
 
 const orderId = computed(() => String(route.params.id || ""));
 const paymentEvents = computed(() => order.value?.paymentEvents || []);
+const needsCheckout = computed(() => {
+  if (!order.value) {
+    return false;
+  }
+
+  return (
+    order.value.paymentStatus === "PENDING" ||
+    order.value.paymentStatus === "PARTIALLY_PAID" ||
+    order.value.paymentStatus === "UNDERPAID"
+  );
+});
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString("en-US", {
@@ -27,11 +44,37 @@ function formatDate(value: string): string {
   });
 }
 
-function getPaymentSeverity(
-  status: "PENDING" | "PAID" | "EXPIRED",
-): "success" | "warn" | "danger" {
-  if (status === "PAID") {
+function getBookingSeverity(
+  status: BookingStatus,
+): "success" | "info" | "warn" | "danger" | "contrast" {
+  if (status === "COMPLETED" || status === "REFUNDED") {
     return "success";
+  }
+
+  if (status === "IN_SERVICE" || status === "CONFIRMED") {
+    return "info";
+  }
+
+  if (status === "CANCELED") {
+    return "danger";
+  }
+
+  if (status === "PAID") {
+    return "contrast";
+  }
+
+  return "warn";
+}
+
+function getPaymentSeverity(
+  status: PaymentStatus,
+): "success" | "info" | "warn" | "danger" {
+  if (status === "PAID" || status === "REFUNDED") {
+    return "success";
+  }
+
+  if (status === "REFUNDING") {
+    return "info";
   }
 
   if (status === "EXPIRED") {
@@ -52,8 +95,16 @@ function getEventSeverity(
     return "danger";
   }
 
-  if (event.status === "PARTIALLY_PAID") {
+  if (
+    event.status === "PARTIALLY_PAID" ||
+    event.status === "UNDERPAID" ||
+    event.status === "REFUNDING"
+  ) {
     return "info";
+  }
+
+  if (event.status === "REFUNDED") {
+    return "success";
   }
 
   return "warn";
@@ -103,7 +154,7 @@ onMounted(async () => {
       <template #title>
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-xl font-semibold text-slate-900">{{ order.serviceTitle }}</h2>
-          <Tag :value="order.bookingStatus" severity="info" rounded />
+          <Tag :value="order.bookingStatus" :severity="getBookingSeverity(order.bookingStatus)" rounded />
           <Tag :value="order.paymentStatus" :severity="getPaymentSeverity(order.paymentStatus)" rounded />
         </div>
       </template>
@@ -113,6 +164,12 @@ onMounted(async () => {
           <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <p><span class="text-slate-500">Booking ID:</span> {{ order.bookingId }}</p>
             <p class="mt-1"><span class="text-slate-500">City:</span> {{ order.city }}</p>
+            <p class="mt-1"><span class="text-slate-500">Travel:</span> {{ order.startDate }} to {{ order.endDate }}</p>
+            <p v-if="order.timeSlot" class="mt-1"><span class="text-slate-500">Time Slot:</span> {{ order.timeSlot }}</p>
+            <p v-if="order.assignedResourceLabel" class="mt-1">
+              <span class="text-slate-500">Assigned Resource:</span>
+              {{ order.assignedResourceLabel }}
+            </p>
             <p class="mt-1">
               <span class="text-slate-500">Expected Amount:</span>
               <span class="font-semibold text-[#0f5b54]">{{ order.expectedAmount }} USDT</span>
@@ -122,17 +179,50 @@ onMounted(async () => {
 
           <div class="grid gap-2 sm:grid-cols-2">
             <RouterLink
+              v-if="needsCheckout"
               :to="`/checkout/${order.bookingId}`"
               class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               Open Checkout
             </RouterLink>
             <RouterLink
-              :to="`/assistant?bookingId=${order.bookingId}`"
+              :to="`/assistant/requests?bookingId=${order.bookingId}`"
               class="inline-flex items-center justify-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
             >
               Request Assistant
             </RouterLink>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Support Contact</p>
+            <p class="mt-2 font-semibold">{{ order.supportContact?.name || "Sean Tour Ops" }}</p>
+            <p class="mt-1">
+              {{ order.supportContact?.channel || "Channel" }}:
+              {{ order.supportContact?.value || "Shared after confirmation" }}
+            </p>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Voucher</p>
+            <p class="mt-2">
+              Code:
+              <span class="font-mono font-semibold">
+                {{ order.serviceVoucherCode || "Available after payment confirmation" }}
+              </span>
+            </p>
+            <p class="mt-2 leading-6">
+              {{ order.serviceVoucherInstructions || "Voucher instructions will appear here once the order is active." }}
+            </p>
+          </div>
+
+          <div
+            v-if="order.cancellationPolicy"
+            class="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700"
+          >
+            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Cancellation Policy
+            </p>
+            <p class="mt-2 leading-6">{{ order.cancellationPolicy }}</p>
           </div>
         </div>
       </template>

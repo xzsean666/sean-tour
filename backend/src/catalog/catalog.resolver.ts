@@ -27,6 +27,11 @@ export class CatalogResolver {
     return this.catalogService.getServiceDetail(id);
   }
 
+  @Query(() => ServiceItem)
+  async serviceItem(@Args('id') id: string): Promise<ServiceItem> {
+    return this.catalogService.getServiceItem(id);
+  }
+
   @Mutation(() => ServiceItem)
   async adminUpsertService(
     @CheckAdmin() _: boolean,

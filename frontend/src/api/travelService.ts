@@ -10,8 +10,7 @@ export type BookingStatus =
   | "CANCELED"
   | "REFUNDING"
   | "REFUNDED";
-
-type PaymentStatus =
+export type PaymentStatus =
   | "PENDING"
   | "PARTIALLY_PAID"
   | "PAID"
@@ -19,6 +18,27 @@ type PaymentStatus =
   | "EXPIRED"
   | "REFUNDING"
   | "REFUNDED";
+
+export interface ServiceCapacity {
+  min: number;
+  max: number;
+  remaining: number;
+}
+
+export interface ServiceContact {
+  name: string;
+  channel: string;
+  value: string;
+}
+
+export interface ServiceResource {
+  id: string;
+  label: string;
+  status: string;
+  languages: string[];
+  seats?: number;
+  availableTimeSlots: string[];
+}
 
 export interface ServiceItem {
   id: string;
@@ -30,7 +50,42 @@ export interface ServiceItem {
   images: string[];
   priceAmount: number;
   currency: "USDT";
+  cancellationPolicy?: string;
+  availableTimeSlots: string[];
+  capacity?: ServiceCapacity;
+  supportContact?: ServiceContact;
+  resources: ServiceResource[];
+  voucherTemplate?: string;
 }
+
+export type ServiceDetailVariant =
+  | {
+      type: "PACKAGE";
+      durationDays: number;
+      itinerary: string[];
+    }
+  | {
+      type: "GUIDE";
+      languages: string[];
+      yearsOfExperience: number;
+      certifications: string[];
+    }
+  | {
+      type: "CAR";
+      seats: number;
+      carType: string;
+      luggageCapacity?: string;
+    }
+  | {
+      type: "ASSISTANT";
+      supportChannels: string[];
+      serviceHours: string;
+    };
+
+export type ServiceDetail = ServiceItem & {
+  status: string;
+  detail: ServiceDetailVariant;
+};
 
 export interface ServicePage {
   items: ServiceItem[];
@@ -45,25 +100,14 @@ export interface CheckoutPreview {
   serviceTitle: string;
   travelerCount: number;
   travelDateRange: string;
+  timeSlot?: string;
   expectedAmount: string;
   currency: "USDT";
   network: "BSC";
   tokenStandard: "ERC20";
   payAddress: string;
-  paymentStatus: "PENDING" | "PAID" | "EXPIRED";
+  paymentStatus: PaymentStatus;
   expiresInMinutes: number;
-}
-
-export interface OrderItem {
-  id: string;
-  bookingId: string;
-  serviceTitle: string;
-  city: string;
-  bookingStatus: BookingStatus;
-  paymentStatus: "PENDING" | "PAID" | "EXPIRED";
-  expectedAmount: string;
-  createdAt: string;
-  paymentEvents: PaymentEvent[];
 }
 
 export interface PaymentEvent {
@@ -76,6 +120,29 @@ export interface PaymentEvent {
   createdAt: string;
 }
 
+export interface OrderItem {
+  id: string;
+  bookingId: string;
+  serviceId: string;
+  userId: string;
+  serviceTitle: string;
+  city: string;
+  bookingStatus: BookingStatus;
+  paymentStatus: PaymentStatus;
+  expectedAmount: string;
+  startDate: string;
+  endDate: string;
+  timeSlot?: string;
+  assignedResourceId?: string;
+  assignedResourceLabel?: string;
+  cancellationPolicy?: string;
+  supportContact?: ServiceContact;
+  serviceVoucherCode?: string;
+  serviceVoucherInstructions?: string;
+  createdAt: string;
+  paymentEvents: PaymentEvent[];
+}
+
 export interface OrderPage {
   items: OrderItem[];
   total: number;
@@ -84,26 +151,65 @@ export interface OrderPage {
   hasMore: boolean;
 }
 
+type ServiceItemGraphQL = {
+  id: string;
+  type: ServiceType;
+  title: string;
+  city: string;
+  description: string;
+  status: string;
+  languages: string[];
+  images: string[];
+  basePrice: {
+    amount: number;
+    currency: "USDT";
+  };
+  cancellationPolicy?: string;
+  availableTimeSlots: string[];
+  capacity?: ServiceCapacity;
+  supportContact?: ServiceContact;
+  resources: ServiceResource[];
+  voucherTemplate?: string;
+};
+
 type ServiceListGraphQL = {
   serviceList: {
-    items: Array<{
-      id: string;
-      type: ServiceType;
-      title: string;
-      city: string;
-      description: string;
-      languages: string[];
-      images: string[];
-      basePrice: {
-        amount: number;
-        currency: "USDT";
-      };
-    }>;
+    items: ServiceItemGraphQL[];
     total: number;
     limit: number;
     offset: number;
     hasMore: boolean;
   };
+};
+
+type ServiceItemDetailGraphQL = {
+  serviceItem: ServiceItemGraphQL;
+};
+
+type ServiceDetailUnionGraphQL = {
+  serviceDetail:
+    | {
+        __typename: "PackageServiceDetail";
+        durationDays: number;
+        itinerary: string[];
+      }
+    | {
+        __typename: "GuideServiceDetail";
+        languages: string[];
+        yearsOfExperience: number;
+        certifications: string[];
+      }
+    | {
+        __typename: "CarServiceDetail";
+        seats: number;
+        carType: string;
+        luggageCapacity?: string;
+      }
+    | {
+        __typename: "AssistantServiceDetail";
+        supportChannels: string[];
+        serviceHours: string;
+      };
 };
 
 type BookingDetailGraphQL = {
@@ -121,6 +227,7 @@ type BookingDetailGraphQL = {
     status: BookingStatus;
     startDate: string;
     endDate: string;
+    timeSlot?: string;
     createdAt: string;
   };
 };
@@ -160,11 +267,18 @@ type MyOrdersGraphQL = {
     items: Array<{
       id: string;
       bookingId: string;
+      serviceId: string;
+      userId: string;
       serviceTitle: string;
       city: string;
       bookingStatus: BookingStatus;
-      paymentStatus: "PENDING" | "PAID" | "EXPIRED";
+      paymentStatus: PaymentStatus;
       expectedAmount: string;
+      startDate: string;
+      endDate: string;
+      timeSlot?: string;
+      assignedResourceId?: string;
+      assignedResourceLabel?: string;
       createdAt: string;
     }>;
     total: number;
@@ -178,22 +292,25 @@ type OrderDetailGraphQL = {
   orderDetail: {
     id: string;
     bookingId: string;
+    serviceId: string;
+    userId: string;
     serviceTitle: string;
     city: string;
     bookingStatus: BookingStatus;
-      paymentStatus: "PENDING" | "PAID" | "EXPIRED";
-      expectedAmount: string;
-      createdAt: string;
-      paymentEvents: Array<{
-        eventId: string;
-        source: string;
-        status: PaymentStatus;
-        paidAmount: string;
-        txHash?: string;
-        confirmations: number;
-        createdAt: string;
-      }>;
-    };
+    paymentStatus: PaymentStatus;
+    expectedAmount: string;
+    startDate: string;
+    endDate: string;
+    timeSlot?: string;
+    assignedResourceId?: string;
+    assignedResourceLabel?: string;
+    cancellationPolicy?: string;
+    supportContact?: ServiceContact;
+    serviceVoucherCode?: string;
+    serviceVoucherInstructions?: string;
+    createdAt: string;
+    paymentEvents: PaymentEvent[];
+  };
 };
 
 function asError(error: unknown): Error {
@@ -208,36 +325,82 @@ function asError(error: unknown): Error {
   return new Error("Unexpected travel service error.");
 }
 
+function toServiceItem(item: ServiceItemGraphQL): ServiceItem {
+  return {
+    id: item.id,
+    type: item.type,
+    title: item.title,
+    city: item.city,
+    description: item.description,
+    languages: item.languages || [],
+    images: item.images || [],
+    priceAmount: item.basePrice.amount,
+    currency: item.basePrice.currency,
+    cancellationPolicy: item.cancellationPolicy,
+    availableTimeSlots: item.availableTimeSlots || [],
+    capacity: item.capacity,
+    supportContact: item.supportContact,
+    resources: item.resources || [],
+    voucherTemplate: item.voucherTemplate,
+  };
+}
+
+function toServiceDetailVariant(
+  payload: ServiceDetailUnionGraphQL["serviceDetail"],
+): ServiceDetailVariant {
+  if (payload.__typename === "PackageServiceDetail") {
+    return {
+      type: "PACKAGE",
+      durationDays: payload.durationDays,
+      itinerary: payload.itinerary,
+    };
+  }
+
+  if (payload.__typename === "GuideServiceDetail") {
+    return {
+      type: "GUIDE",
+      languages: payload.languages,
+      yearsOfExperience: payload.yearsOfExperience,
+      certifications: payload.certifications,
+    };
+  }
+
+  if (payload.__typename === "CarServiceDetail") {
+    return {
+      type: "CAR",
+      seats: payload.seats,
+      carType: payload.carType,
+      luggageCapacity: payload.luggageCapacity,
+    };
+  }
+
+  return {
+    type: "ASSISTANT",
+    supportChannels: payload.supportChannels,
+    serviceHours: payload.serviceHours,
+  };
+}
+
 function toExpectedAmount(amount: number, travelerCount: number): string {
   return (amount * travelerCount).toFixed(2);
 }
 
-function toCheckoutPaymentStatus(
-  status: PaymentStatus,
-): "PENDING" | "PAID" | "EXPIRED" {
-  if (status === "PAID") {
-    return "PAID";
-  }
-
-  if (status === "EXPIRED") {
-    return "EXPIRED";
-  }
-
-  return "PENDING";
-}
-
-function toFallbackPaymentStatus(
-  bookingStatus: BookingStatus,
-): "PENDING" | "PAID" | "EXPIRED" {
+function toFallbackPaymentStatus(bookingStatus: BookingStatus): PaymentStatus {
   if (
     bookingStatus === "PAID" ||
     bookingStatus === "CONFIRMED" ||
     bookingStatus === "IN_SERVICE" ||
-    bookingStatus === "COMPLETED" ||
-    bookingStatus === "REFUNDING" ||
-    bookingStatus === "REFUNDED"
+    bookingStatus === "COMPLETED"
   ) {
     return "PAID";
+  }
+
+  if (bookingStatus === "REFUNDING") {
+    return "REFUNDING";
+  }
+
+  if (bookingStatus === "REFUNDED") {
+    return "REFUNDED";
   }
 
   if (bookingStatus === "CANCELED") {
@@ -252,6 +415,10 @@ export const travelService = {
     type?: ServiceType;
     city?: string;
     language?: string;
+    date?: string;
+    minPriceAmount?: number;
+    maxPriceAmount?: number;
+    status?: string;
     limit?: number;
     offset?: number;
   }): Promise<ServicePage> {
@@ -268,8 +435,30 @@ export const travelService = {
               title
               city
               description
+              status
               languages
               images
+              cancellationPolicy
+              availableTimeSlots
+              voucherTemplate
+              capacity {
+                min
+                max
+                remaining
+              }
+              supportContact {
+                name
+                channel
+                value
+              }
+              resources {
+                id
+                label
+                status
+                languages
+                seats
+                availableTimeSlots
+              }
               basePrice {
                 amount
                 currency
@@ -287,6 +476,14 @@ export const travelService = {
           ...(params?.type ? { type: params.type } : {}),
           ...(params?.city ? { city: params.city } : {}),
           ...(params?.language ? { language: params.language } : {}),
+          ...(params?.date ? { date: params.date } : {}),
+          ...(params?.minPriceAmount !== undefined
+            ? { minPriceAmount: params.minPriceAmount }
+            : {}),
+          ...(params?.maxPriceAmount !== undefined
+            ? { maxPriceAmount: params.maxPriceAmount }
+            : {}),
+          ...(params?.status ? { status: params.status } : {}),
           page: {
             limit,
             offset,
@@ -296,17 +493,7 @@ export const travelService = {
     });
 
     return {
-      items: data.serviceList.items.map((item) => ({
-        id: item.id,
-        type: item.type,
-        title: item.title,
-        city: item.city,
-        description: item.description,
-        languages: item.languages,
-        images: item.images || [],
-        priceAmount: item.basePrice.amount,
-        currency: item.basePrice.currency,
-      })),
+      items: data.serviceList.items.map((item) => toServiceItem(item)),
       total: data.serviceList.total,
       limit: data.serviceList.limit,
       offset: data.serviceList.offset,
@@ -314,11 +501,105 @@ export const travelService = {
     };
   },
 
+  async getServiceDetail(serviceId: string): Promise<ServiceDetail> {
+    try {
+      const [itemData, detailData] = await Promise.all([
+        requestBackendGraphQL<ServiceItemDetailGraphQL>({
+          query: `
+            query ServiceItem($id: String!) {
+              serviceItem(id: $id) {
+                id
+                type
+                title
+                city
+                description
+                status
+                languages
+                images
+                cancellationPolicy
+                availableTimeSlots
+                voucherTemplate
+                capacity {
+                  min
+                  max
+                  remaining
+                }
+                supportContact {
+                  name
+                  channel
+                  value
+                }
+                resources {
+                  id
+                  label
+                  status
+                  languages
+                  seats
+                  availableTimeSlots
+                }
+                basePrice {
+                  amount
+                  currency
+                }
+              }
+            }
+          `,
+          variables: {
+            id: serviceId,
+          },
+        }),
+        requestBackendGraphQL<ServiceDetailUnionGraphQL>({
+          query: `
+            query ServiceDetail($id: String!) {
+              serviceDetail(id: $id) {
+                __typename
+                ... on PackageServiceDetail {
+                  durationDays
+                  itinerary
+                }
+                ... on GuideServiceDetail {
+                  languages
+                  yearsOfExperience
+                  certifications
+                }
+                ... on CarServiceDetail {
+                  seats
+                  carType
+                  luggageCapacity
+                }
+                ... on AssistantServiceDetail {
+                  supportChannels
+                  serviceHours
+                }
+              }
+            }
+          `,
+          variables: {
+            id: serviceId,
+          },
+        }),
+      ]);
+
+      if (itemData.serviceItem.status !== "ACTIVE") {
+        throw new Error(`Service ${serviceId} is not available.`);
+      }
+
+      return {
+        ...toServiceItem(itemData.serviceItem),
+        status: itemData.serviceItem.status,
+        detail: toServiceDetailVariant(detailData.serviceDetail),
+      };
+    } catch (error) {
+      throw asError(error);
+    }
+  },
+
   async createBooking(input: {
     serviceId: string;
     startDate: string;
     endDate: string;
     travelerCount: number;
+    timeSlot?: string;
   }): Promise<{ bookingId: string }> {
     const data = await requestBackendGraphQL<CreateBookingGraphQL>({
       query: `
@@ -357,6 +638,7 @@ export const travelService = {
               status
               startDate
               endDate
+              timeSlot
               createdAt
             }
           }
@@ -372,6 +654,7 @@ export const travelService = {
         serviceTitle: booking.serviceSnapshot.title,
         travelerCount: booking.travelerCount,
         travelDateRange: `${booking.startDate} to ${booking.endDate}`,
+        timeSlot: booking.timeSlot,
         expectedAmount: toExpectedAmount(
           booking.serviceSnapshot.basePrice.amount,
           booking.travelerCount,
@@ -446,7 +729,7 @@ export const travelService = {
         network: payment.network,
         tokenStandard: payment.tokenStandard,
         payAddress: payment.payAddress,
-        paymentStatus: toCheckoutPaymentStatus(payment.status),
+        paymentStatus: payment.status,
         expiresInMinutes,
       };
     } catch (error) {
@@ -470,11 +753,18 @@ export const travelService = {
               items {
                 id
                 bookingId
+                serviceId
+                userId
                 serviceTitle
                 city
                 bookingStatus
                 paymentStatus
                 expectedAmount
+                startDate
+                endDate
+                timeSlot
+                assignedResourceId
+                assignedResourceLabel
                 createdAt
               }
               total
@@ -520,11 +810,26 @@ export const travelService = {
             orderDetail(orderId: $orderId) {
               id
               bookingId
+              serviceId
+              userId
               serviceTitle
               city
               bookingStatus
               paymentStatus
               expectedAmount
+              startDate
+              endDate
+              timeSlot
+              assignedResourceId
+              assignedResourceLabel
+              cancellationPolicy
+              supportContact {
+                name
+                channel
+                value
+              }
+              serviceVoucherCode
+              serviceVoucherInstructions
               createdAt
               paymentEvents {
                 eventId
@@ -544,8 +849,8 @@ export const travelService = {
       });
 
       return data.orderDetail;
-    } catch {
-      return null;
+    } catch (error) {
+      throw asError(error);
     }
   },
 };

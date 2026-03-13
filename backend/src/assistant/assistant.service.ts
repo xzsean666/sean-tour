@@ -3,12 +3,15 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { BookingService } from '../booking/booking.service';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
 import { DBService, PGKVDatabase } from '../common/db.service';
 import { ServiceType } from '../catalog/dto/service-type.enum';
+import { NotificationType } from '../notification/dto/notification-type.enum';
+import { NotificationService } from '../notification/notification.service';
 import { AdminBatchAssignAssistantSessionsInput } from './dto/admin-batch-assign-assistant-sessions.input';
 import { AdminAssistantSessionListInput } from './dto/admin-assistant-session-list.input';
 import { AdminUpdateAssistantSessionInput } from './dto/admin-update-assistant-session.input';
@@ -44,6 +47,8 @@ export class AssistantService {
   constructor(
     private readonly bookingService: BookingService,
     private readonly dbService: DBService,
+    @Optional()
+    private readonly notificationService?: NotificationService,
   ) {
     this.travelDB = this.dbService.getDBInstance('travel_kv');
   }
@@ -102,6 +107,12 @@ export class AssistantService {
     };
 
     await this.travelDB.put(`assistant_session:${record.id}`, record);
+    await this.notifyAssistant(
+      userId,
+      'Assistant request created',
+      `Assistant session ${record.id} is waiting for assignment.`,
+      '/assistant/requests',
+    );
     return this.toAssistantSession(record);
   }
 
@@ -239,6 +250,12 @@ export class AssistantService {
     };
 
     await this.travelDB.put(`assistant_session:${updated.id}`, updated);
+    await this.notifyAssistant(
+      updated.userId,
+      `Assistant session ${updated.status}`,
+      `Assistant session ${updated.id} changed to ${updated.status}.`,
+      '/assistant/requests',
+    );
     return this.toAssistantSession(updated);
   }
 
@@ -276,6 +293,17 @@ export class AssistantService {
     await Promise.all(
       updates.map((record) =>
         this.travelDB.put(`assistant_session:${record.id}`, record),
+      ),
+    );
+
+    await Promise.all(
+      updates.map((record) =>
+        this.notifyAssistant(
+          record.userId,
+          'Assistant assigned',
+          `Assistant session ${record.id} has been assigned to ${assignedAgent}.`,
+          '/assistant/requests',
+        ),
       ),
     );
 
@@ -414,5 +442,24 @@ export class AssistantService {
 
   private generateSessionId(): string {
     return `asst_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+  }
+
+  private async notifyAssistant(
+    userId: string,
+    title: string,
+    message: string,
+    targetPath: string,
+  ): Promise<void> {
+    if (!this.notificationService) {
+      return;
+    }
+
+    await this.notificationService.createNotification({
+      userId,
+      type: NotificationType.ASSISTANT,
+      title,
+      message,
+      targetPath,
+    });
   }
 }

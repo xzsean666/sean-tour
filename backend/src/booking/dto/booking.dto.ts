@@ -4,6 +4,27 @@ import { ServiceType } from '../../catalog/dto/service-type.enum';
 import { BookingStatus } from './booking-status.enum';
 
 @ObjectType()
+export class BookingServiceContact {
+  @Field()
+  name: string;
+
+  @Field()
+  channel: string;
+
+  @Field()
+  value: string;
+}
+
+@ObjectType()
+export class BookingAssignedResource {
+  @Field()
+  id: string;
+
+  @Field()
+  label: string;
+}
+
+@ObjectType()
 export class BookingServiceSnapshot {
   @Field()
   title: string;
@@ -13,6 +34,15 @@ export class BookingServiceSnapshot {
 
   @Field(() => PriceDto)
   basePrice: PriceDto;
+
+  @Field({ nullable: true })
+  cancellationPolicy?: string;
+
+  @Field(() => BookingServiceContact, { nullable: true })
+  supportContact?: BookingServiceContact;
+
+  @Field({ nullable: true })
+  voucherTemplate?: string;
 }
 
 @ObjectType()
@@ -35,8 +65,14 @@ export class Booking {
   @Field()
   endDate: string;
 
+  @Field({ nullable: true })
+  timeSlot?: string;
+
   @Field(() => Int)
   travelerCount: number;
+
+  @Field(() => BookingAssignedResource, { nullable: true })
+  assignedResource?: BookingAssignedResource;
 
   @Field(() => BookingStatus)
   status: BookingStatus;

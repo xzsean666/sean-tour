@@ -9,6 +9,7 @@ import {
   travelService,
   type BookingStatus,
   type OrderItem,
+  type PaymentStatus,
 } from "../api/travelService";
 
 type BookingStatusFilter = "ALL" | BookingStatus;
@@ -76,10 +77,14 @@ function getBookingSeverity(
 }
 
 function getPaymentSeverity(
-  status: "PENDING" | "PAID" | "EXPIRED",
-): "success" | "warn" | "danger" {
-  if (status === "PAID") {
+  status: PaymentStatus,
+): "success" | "info" | "warn" | "danger" {
+  if (status === "PAID" || status === "REFUNDED") {
     return "success";
+  }
+
+  if (status === "REFUNDING") {
+    return "info";
   }
 
   if (status === "EXPIRED") {
@@ -87,6 +92,22 @@ function getPaymentSeverity(
   }
 
   return "warn";
+}
+
+function canOpenCheckout(order: OrderItem): boolean {
+  return order.bookingStatus !== "CANCELED" && order.paymentStatus !== "REFUNDED";
+}
+
+function getCheckoutLabel(order: OrderItem): string {
+  if (
+    order.paymentStatus === "PENDING" ||
+    order.paymentStatus === "PARTIALLY_PAID" ||
+    order.paymentStatus === "UNDERPAID"
+  ) {
+    return "Open Checkout";
+  }
+
+  return "Payment Desk";
 }
 
 async function loadOrders(nextOffset: number = offset.value): Promise<void> {
@@ -215,6 +236,12 @@ onMounted(async () => {
               <p><span class="text-slate-500">Order ID:</span> {{ order.id }}</p>
               <p><span class="text-slate-500">Booking ID:</span> {{ order.bookingId }}</p>
               <p><span class="text-slate-500">City:</span> {{ order.city }}</p>
+              <p><span class="text-slate-500">Travel:</span> {{ order.startDate }} to {{ order.endDate }}</p>
+              <p v-if="order.timeSlot"><span class="text-slate-500">Time Slot:</span> {{ order.timeSlot }}</p>
+              <p v-if="order.assignedResourceLabel">
+                <span class="text-slate-500">Assigned Resource:</span>
+                {{ order.assignedResourceLabel }}
+              </p>
               <p><span class="text-slate-500">Created:</span> {{ formatDate(order.createdAt) }}</p>
             </div>
           </div>
@@ -231,10 +258,11 @@ onMounted(async () => {
               </RouterLink>
 
               <RouterLink
+                v-if="canOpenCheckout(order)"
                 :to="`/checkout/${order.bookingId}`"
                 class="inline-flex items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
               >
-                Open Checkout
+                {{ getCheckoutLabel(order) }}
               </RouterLink>
             </div>
           </div>

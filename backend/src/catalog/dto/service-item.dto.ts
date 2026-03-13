@@ -1,5 +1,8 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 import { PriceDto } from './price.dto';
+import { ServiceCapacity } from './service-capacity.dto';
+import { ServiceContact } from './service-contact.dto';
+import { ServiceResource } from './service-resource.dto';
 import { ServiceType } from './service-type.enum';
 
 @ObjectType()
@@ -30,6 +33,24 @@ export class ServiceItem {
 
   @Field(() => PriceDto)
   basePrice: PriceDto;
+
+  @Field({ nullable: true })
+  cancellationPolicy?: string;
+
+  @Field(() => [String])
+  availableTimeSlots: string[];
+
+  @Field(() => ServiceCapacity, { nullable: true })
+  capacity?: ServiceCapacity;
+
+  @Field(() => ServiceContact, { nullable: true })
+  supportContact?: ServiceContact;
+
+  @Field(() => [ServiceResource])
+  resources: ServiceResource[];
+
+  @Field({ nullable: true })
+  voucherTemplate?: string;
 
   @Field()
   status: string;

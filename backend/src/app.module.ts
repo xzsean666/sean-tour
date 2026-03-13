@@ -11,6 +11,8 @@ import { BookingModule } from './booking/booking.module';
 import { PaymentModule } from './payment/payment.module';
 import { OrderModule } from './order/order.module';
 import { AssistantModule } from './assistant/assistant.module';
+import { NotificationModule } from './notification/notification.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -27,9 +29,11 @@ import { AssistantModule } from './assistant/assistant.module';
     AuthModule,
     CatalogModule,
     BookingModule,
+    NotificationModule,
     PaymentModule,
     OrderModule,
     AssistantModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

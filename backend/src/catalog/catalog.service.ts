@@ -11,6 +11,9 @@ import { ServiceAuditAction } from './dto/service-audit-action.enum';
 import { ServiceAuditListInput } from './dto/service-audit-list.input';
 import { ServiceAuditLog } from './dto/service-audit-log.dto';
 import { ServiceAuditPage } from './dto/service-audit-page.dto';
+import { ServiceCapacity } from './dto/service-capacity.dto';
+import { ServiceContact } from './dto/service-contact.dto';
+import { ServiceResource } from './dto/service-resource.dto';
 import { SetServiceStatusInput } from './dto/set-service-status.input';
 import { ServiceListInput } from './dto/service-list.input';
 import { ServicePage } from './dto/service-page.dto';
@@ -43,6 +46,12 @@ type CatalogServiceRecord = {
     amount: number;
     currency: string;
   };
+  cancellationPolicy?: string;
+  availableTimeSlots?: string[];
+  capacity?: ServiceCapacity;
+  supportContact?: ServiceContact;
+  resources?: ServiceResource[];
+  voucherTemplate?: string;
   status: string;
   detail: ServiceDetailRecord;
   updatedAt: string;
@@ -79,6 +88,24 @@ const CATALOG_SEED: CatalogServiceRecord[] = [
     images: ['https://images.unsplash.com/photo-1547981609-4b6bf67db38a'],
     languages: ['English', 'Chinese'],
     basePrice: { amount: 399, currency: 'USDT' },
+    cancellationPolicy: 'Free cancellation up to 72 hours before departure.',
+    availableTimeSlots: [
+      '2026-04-18 09:00 Beijing',
+      '2026-04-25 09:00 Beijing',
+      '2026-05-02 09:00 Beijing',
+    ],
+    capacity: {
+      min: 1,
+      max: 6,
+      remaining: 4,
+    },
+    supportContact: {
+      name: 'Beijing Guest Desk',
+      channel: 'WeChat',
+      value: 'sean-tour-beijing',
+    },
+    voucherTemplate:
+      'Show booking {bookingId} to the Beijing Guest Desk before departure.',
     status: 'ACTIVE',
     detail: {
       __typename: 'PackageServiceDetail',
@@ -102,6 +129,43 @@ const CATALOG_SEED: CatalogServiceRecord[] = [
     images: ['https://images.unsplash.com/photo-1538428494232-9c0f6f6a438d'],
     languages: ['English', 'Spanish', 'Chinese'],
     basePrice: { amount: 149, currency: 'USDT' },
+    cancellationPolicy: 'Free cancellation up to 48 hours before guide start.',
+    availableTimeSlots: [
+      '2026-04-19 10:00 Shanghai',
+      '2026-04-20 14:00 Shanghai',
+      '2026-04-22 09:00 Shanghai',
+    ],
+    capacity: {
+      min: 1,
+      max: 5,
+      remaining: 3,
+    },
+    supportContact: {
+      name: 'Shanghai Guide Ops',
+      channel: 'WhatsApp',
+      value: '+86-138-0000-1001',
+    },
+    resources: [
+      {
+        id: 'guide_sh_amy',
+        label: 'Amy Zhang',
+        status: 'ACTIVE',
+        languages: ['English', 'Chinese'],
+        availableTimeSlots: [
+          '2026-04-19 10:00 Shanghai',
+          '2026-04-22 09:00 Shanghai',
+        ],
+      },
+      {
+        id: 'guide_sh_carlos',
+        label: 'Carlos Li',
+        status: 'ACTIVE',
+        languages: ['Spanish', 'English', 'Chinese'],
+        availableTimeSlots: ['2026-04-20 14:00 Shanghai'],
+      },
+    ],
+    voucherTemplate:
+      'Your guide will verify booking {bookingId} at the first meetup point.',
     status: 'ACTIVE',
     detail: {
       __typename: 'GuideServiceDetail',
@@ -125,6 +189,45 @@ const CATALOG_SEED: CatalogServiceRecord[] = [
     images: ['https://images.unsplash.com/photo-1503376780353-7e6692767b70'],
     languages: ['English', 'Chinese'],
     basePrice: { amount: 259, currency: 'USDT' },
+    cancellationPolicy: 'Free cancellation up to 24 hours before pickup.',
+    availableTimeSlots: [
+      '2026-04-18 08:00 Shenzhen Airport',
+      '2026-04-18 13:00 Shenzhen City',
+      '2026-04-19 09:00 Shenzhen Full Day',
+    ],
+    capacity: {
+      min: 1,
+      max: 7,
+      remaining: 2,
+    },
+    supportContact: {
+      name: 'Shenzhen Transport Ops',
+      channel: 'Phone',
+      value: '+86-138-0000-1002',
+    },
+    resources: [
+      {
+        id: 'car_sz_van_01',
+        label: '粤B-A1001 Mercedes V-Class',
+        status: 'ACTIVE',
+        languages: ['English', 'Chinese'],
+        seats: 7,
+        availableTimeSlots: [
+          '2026-04-18 08:00 Shenzhen Airport',
+          '2026-04-19 09:00 Shenzhen Full Day',
+        ],
+      },
+      {
+        id: 'car_sz_van_02',
+        label: '粤B-A1002 Buick GL8',
+        status: 'ACTIVE',
+        languages: ['Chinese'],
+        seats: 7,
+        availableTimeSlots: ['2026-04-18 13:00 Shenzhen City'],
+      },
+    ],
+    voucherTemplate:
+      'Driver dispatch uses booking {bookingId}. Keep this code ready at pickup.',
     status: 'ACTIVE',
     detail: {
       __typename: 'CarServiceDetail',
@@ -145,6 +248,44 @@ const CATALOG_SEED: CatalogServiceRecord[] = [
     images: ['https://images.unsplash.com/photo-1552664730-d307ca884978'],
     languages: ['English', 'Chinese', 'French'],
     basePrice: { amount: 99, currency: 'USDT' },
+    cancellationPolicy:
+      'Unused assistant hours can be rescheduled within 7 days.',
+    availableTimeSlots: [
+      '08:00-12:00 China Time',
+      '12:00-18:00 China Time',
+      '18:00-22:00 China Time',
+    ],
+    capacity: {
+      min: 1,
+      max: 4,
+      remaining: 3,
+    },
+    supportContact: {
+      name: 'Remote Assistant Desk',
+      channel: 'Email',
+      value: 'assistant@sean-tour.local',
+    },
+    resources: [
+      {
+        id: 'assistant_cn_iris',
+        label: 'Iris Chen',
+        status: 'ACTIVE',
+        languages: ['English', 'Chinese'],
+        availableTimeSlots: [
+          '08:00-12:00 China Time',
+          '12:00-18:00 China Time',
+        ],
+      },
+      {
+        id: 'assistant_cn_luc',
+        label: 'Luc Martin',
+        status: 'ACTIVE',
+        languages: ['English', 'French', 'Chinese'],
+        availableTimeSlots: ['18:00-22:00 China Time'],
+      },
+    ],
+    voucherTemplate:
+      'Assistant activation code for booking {bookingId} will be used in chat handoff.',
     status: 'ACTIVE',
     detail: {
       __typename: 'AssistantServiceDetail',
@@ -176,10 +317,34 @@ export class CatalogService implements OnModuleInit {
     const offset = Math.max(input?.page?.offset ?? 0, 0);
     const city = input?.city?.trim().toLowerCase();
     const language = input?.language?.trim().toLowerCase();
+    const requestedDate = this.normalizeDateFilter(input?.date);
+    const minPriceAmount = this.normalizeOptionalPriceFilter(
+      input?.minPriceAmount,
+      'minPriceAmount',
+    );
+    const maxPriceAmount = this.normalizeOptionalPriceFilter(
+      input?.maxPriceAmount,
+      'maxPriceAmount',
+    );
+    const status = input?.status?.trim().toUpperCase();
+
+    if (
+      minPriceAmount !== undefined &&
+      maxPriceAmount !== undefined &&
+      minPriceAmount > maxPriceAmount
+    ) {
+      throw new BadRequestException(
+        'minPriceAmount must be less than or equal to maxPriceAmount',
+      );
+    }
 
     const allServices = await this.getAllServiceRecords();
 
     const filtered = allServices.filter((service) => {
+      if (status && service.status.toUpperCase() !== status) {
+        return false;
+      }
+
       if (input?.type && service.type !== input.type) {
         return false;
       }
@@ -191,6 +356,27 @@ export class CatalogService implements OnModuleInit {
       if (
         language &&
         !service.languages.some((item) => item.toLowerCase().includes(language))
+      ) {
+        return false;
+      }
+
+      if (
+        requestedDate &&
+        !this.matchesRequestedDate(service.availableTimeSlots, requestedDate)
+      ) {
+        return false;
+      }
+
+      if (
+        minPriceAmount !== undefined &&
+        service.basePrice.amount < minPriceAmount
+      ) {
+        return false;
+      }
+
+      if (
+        maxPriceAmount !== undefined &&
+        service.basePrice.amount > maxPriceAmount
       ) {
         return false;
       }
@@ -216,6 +402,11 @@ export class CatalogService implements OnModuleInit {
     return service.detail;
   }
 
+  async getServiceItem(id: string): Promise<ServiceItem> {
+    const service = await this.getServiceOrThrow(id);
+    return this.toServiceItem(service);
+  }
+
   async upsertService(input: UpsertServiceInput): Promise<ServiceItem> {
     await this.ensureSeedData();
 
@@ -225,6 +416,7 @@ export class CatalogService implements OnModuleInit {
       input.images !== undefined
         ? this.normalizeStringArray(input.images)
         : existing?.images || [];
+    const resources = this.buildResources(input, existing);
 
     const record: CatalogServiceRecord = {
       entityType: 'SERVICE',
@@ -239,6 +431,23 @@ export class CatalogService implements OnModuleInit {
         amount: this.normalizeAmount(input.basePriceAmount),
         currency: 'USDT',
       },
+      cancellationPolicy:
+        input.cancellationPolicy?.trim() ||
+        existing?.cancellationPolicy ||
+        this.defaultCancellationPolicy(input.type),
+      availableTimeSlots: this.resolveAvailableTimeSlots(
+        input.availableTimeSlots !== undefined
+          ? this.normalizeStringArray(input.availableTimeSlots)
+          : existing?.availableTimeSlots || [],
+        resources,
+      ),
+      capacity: this.buildCapacity(input, existing),
+      supportContact: this.buildSupportContact(input, existing),
+      resources,
+      voucherTemplate:
+        input.voucherTemplate?.trim() ||
+        existing?.voucherTemplate ||
+        this.defaultVoucherTemplate(input.type),
       status: this.requireText(input.status || 'ACTIVE', 'status'),
       detail: this.buildDetail(input, existing),
       updatedAt: new Date().toISOString(),
@@ -384,6 +593,133 @@ export class CatalogService implements OnModuleInit {
     return normalized;
   }
 
+  async reserveServiceCapacity(id: string): Promise<ServiceItem> {
+    const service = await this.getServiceOrThrow(id);
+    const capacity = service.capacity;
+
+    if (!capacity) {
+      return this.toServiceItem(service);
+    }
+
+    if (capacity.remaining <= 0) {
+      throw new BadRequestException(`Service ${id} is sold out`);
+    }
+
+    const updated: CatalogServiceRecord = {
+      ...service,
+      capacity: {
+        ...capacity,
+        remaining: capacity.remaining - 1,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service:${updated.id}`, updated);
+    return this.toServiceItem(updated);
+  }
+
+  async reserveServiceAssignment(params: {
+    id: string;
+    timeSlot: string;
+    travelerCount: number;
+    resourceId?: string;
+  }): Promise<ServiceResource | undefined> {
+    const service = await this.getServiceOrThrow(params.id);
+    const resources = service.resources || [];
+
+    if (resources.length === 0) {
+      return undefined;
+    }
+
+    const selectedResource = this.selectAssignableResource(service, params);
+    const updatedResources = resources.map((resource) => {
+      if (resource.id !== selectedResource.id) {
+        return resource;
+      }
+
+      return {
+        ...resource,
+        availableTimeSlots: resource.availableTimeSlots.filter(
+          (slot) => slot !== params.timeSlot,
+        ),
+      };
+    });
+
+    const updated: CatalogServiceRecord = {
+      ...service,
+      resources: updatedResources,
+      availableTimeSlots: this.resolveAvailableTimeSlots(
+        service.availableTimeSlots,
+        updatedResources,
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service:${updated.id}`, updated);
+    return selectedResource;
+  }
+
+  async releaseServiceCapacity(id: string): Promise<ServiceItem> {
+    const service = await this.getServiceOrThrow(id);
+    const capacity = service.capacity;
+
+    if (!capacity) {
+      return this.toServiceItem(service);
+    }
+
+    const updated: CatalogServiceRecord = {
+      ...service,
+      capacity: {
+        ...capacity,
+        remaining: Math.min(capacity.max, capacity.remaining + 1),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service:${updated.id}`, updated);
+    return this.toServiceItem(updated);
+  }
+
+  async releaseServiceAssignment(params: {
+    id: string;
+    timeSlot?: string;
+    resourceId?: string;
+  }): Promise<ServiceItem> {
+    const service = await this.getServiceOrThrow(params.id);
+
+    if (!params.timeSlot || !params.resourceId || !service.resources?.length) {
+      return this.toServiceItem(service);
+    }
+
+    const updatedResources = service.resources.map((resource) => {
+      if (resource.id !== params.resourceId) {
+        return resource;
+      }
+
+      if (resource.availableTimeSlots.includes(params.timeSlot!)) {
+        return resource;
+      }
+
+      return {
+        ...resource,
+        availableTimeSlots: [...resource.availableTimeSlots, params.timeSlot!],
+      };
+    });
+
+    const updated: CatalogServiceRecord = {
+      ...service,
+      resources: updatedResources,
+      availableTimeSlots: this.resolveAvailableTimeSlots(
+        service.availableTimeSlots,
+        updatedResources,
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.travelDB.put(`service:${updated.id}`, updated);
+    return this.toServiceItem(updated);
+  }
+
   private async getServiceRecordIfExists(
     id: string,
   ): Promise<CatalogServiceRecord | null> {
@@ -454,7 +790,38 @@ export class CatalogService implements OnModuleInit {
       return null;
     }
 
-    return candidate as CatalogServiceRecord;
+    const normalized = candidate as CatalogServiceRecord;
+    const fallbackCapacity = this.defaultCapacityForType(
+      normalized.type,
+      normalized.detail,
+    );
+    const resources = this.normalizeResources(normalized.resources);
+    const availableTimeSlots = this.resolveAvailableTimeSlots(
+      normalized.availableTimeSlots,
+      resources,
+    );
+
+    return {
+      ...normalized,
+      images: Array.isArray(normalized.images) ? normalized.images : [],
+      languages: Array.isArray(normalized.languages)
+        ? normalized.languages
+        : [],
+      cancellationPolicy:
+        normalized.cancellationPolicy ||
+        this.defaultCancellationPolicy(normalized.type),
+      availableTimeSlots,
+      capacity: this.normalizeCapacity(normalized.capacity, fallbackCapacity),
+      supportContact: this.normalizeSupportContact(
+        normalized.supportContact,
+        this.defaultSupportContact(normalized.type),
+      ),
+      resources,
+      voucherTemplate:
+        normalized.voucherTemplate ||
+        this.defaultVoucherTemplate(normalized.type),
+      status: normalized.status || 'ACTIVE',
+    };
   }
 
   private toServiceItem(service: CatalogServiceRecord): ServiceItem {
@@ -468,9 +835,68 @@ export class CatalogService implements OnModuleInit {
       images: service.images,
       languages: service.languages,
       basePrice: service.basePrice,
+      cancellationPolicy: service.cancellationPolicy,
+      availableTimeSlots: service.availableTimeSlots || [],
+      capacity: service.capacity,
+      supportContact: service.supportContact,
+      resources: service.resources || [],
+      voucherTemplate: service.voucherTemplate,
       status: service.status,
       updatedAt: service.updatedAt,
     };
+  }
+
+  private buildCapacity(
+    input: UpsertServiceInput,
+    existing: CatalogServiceRecord | null,
+  ): ServiceCapacity {
+    if (input.capacity) {
+      return this.normalizeCapacity(
+        input.capacity,
+        this.defaultCapacityForType(input.type, existing?.detail),
+      );
+    }
+
+    if (existing?.capacity) {
+      return this.normalizeCapacity(
+        existing.capacity,
+        this.defaultCapacityForType(input.type, existing.detail),
+      );
+    }
+
+    return this.defaultCapacityForType(input.type, existing?.detail);
+  }
+
+  private buildSupportContact(
+    input: UpsertServiceInput,
+    existing: CatalogServiceRecord | null,
+  ): ServiceContact {
+    if (input.supportContact) {
+      return this.normalizeSupportContact(
+        input.supportContact,
+        this.defaultSupportContact(input.type),
+      );
+    }
+
+    if (existing?.supportContact) {
+      return this.normalizeSupportContact(
+        existing.supportContact,
+        this.defaultSupportContact(input.type),
+      );
+    }
+
+    return this.defaultSupportContact(input.type);
+  }
+
+  private buildResources(
+    input: UpsertServiceInput,
+    existing: CatalogServiceRecord | null,
+  ): ServiceResource[] {
+    if (input.resources !== undefined) {
+      return this.normalizeResources(input.resources);
+    }
+
+    return this.normalizeResources(existing?.resources);
   }
 
   private toServiceAuditRecord(value: unknown): ServiceAuditRecord | null {
@@ -674,12 +1100,330 @@ export class CatalogService implements OnModuleInit {
     return Array.from(new Set(normalized));
   }
 
+  private normalizeCapacity(
+    value: Partial<ServiceCapacity> | undefined,
+    fallback: ServiceCapacity,
+  ): ServiceCapacity {
+    const min = Number.isInteger(value?.min)
+      ? Number(value?.min)
+      : fallback.min;
+    const max = Number.isInteger(value?.max)
+      ? Number(value?.max)
+      : fallback.max;
+    const remaining = Number.isInteger(value?.remaining)
+      ? Number(value?.remaining)
+      : fallback.remaining;
+
+    if (min < 1) {
+      throw new BadRequestException('capacity.min must be greater than 0');
+    }
+
+    if (max < min) {
+      throw new BadRequestException(
+        'capacity.max must be greater than or equal to min',
+      );
+    }
+
+    if (remaining < 0) {
+      throw new BadRequestException('capacity.remaining must be non-negative');
+    }
+
+    if (remaining > max) {
+      throw new BadRequestException(
+        'capacity.remaining must be less than or equal to max',
+      );
+    }
+
+    return {
+      min,
+      max,
+      remaining,
+    };
+  }
+
+  private normalizeSupportContact(
+    value: Partial<ServiceContact> | undefined,
+    fallback: ServiceContact,
+  ): ServiceContact {
+    const name =
+      typeof value?.name === 'string' && value.name.trim()
+        ? value.name.trim()
+        : fallback.name;
+    const channel =
+      typeof value?.channel === 'string' && value.channel.trim()
+        ? value.channel.trim()
+        : fallback.channel;
+    const contactValue =
+      typeof value?.value === 'string' && value.value.trim()
+        ? value.value.trim()
+        : fallback.value;
+
+    return {
+      name,
+      channel,
+      value: contactValue,
+    };
+  }
+
+  private normalizeResources(value: unknown): ServiceResource[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const seenIds = new Set<string>();
+    const resources: ServiceResource[] = [];
+
+    for (const item of value) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+
+      const candidate = item as Partial<ServiceResource>;
+      const id = this.requireText(String(candidate.id || ''), 'resource.id');
+
+      if (seenIds.has(id)) {
+        throw new BadRequestException(`duplicate resource id: ${id}`);
+      }
+
+      seenIds.add(id);
+
+      const seats =
+        candidate.seats !== undefined ? Number(candidate.seats) : undefined;
+      if (seats !== undefined && (!Number.isInteger(seats) || seats <= 0)) {
+        throw new BadRequestException(
+          'resource.seats must be a positive integer',
+        );
+      }
+
+      resources.push({
+        id,
+        label: this.requireText(
+          String(candidate.label || ''),
+          'resource.label',
+        ),
+        status:
+          typeof candidate.status === 'string' && candidate.status.trim()
+            ? candidate.status.trim().toUpperCase()
+            : 'ACTIVE',
+        languages: this.normalizeStringArray(candidate.languages),
+        seats,
+        availableTimeSlots: this.normalizeStringArray(
+          candidate.availableTimeSlots,
+        ),
+      });
+    }
+
+    return resources;
+  }
+
+  private resolveAvailableTimeSlots(
+    baseSlots: string[] | undefined,
+    resources: ServiceResource[],
+  ): string[] {
+    if (resources.length === 0) {
+      return this.normalizeStringArray(baseSlots);
+    }
+
+    return this.normalizeStringArray(
+      resources.flatMap((resource) => resource.availableTimeSlots),
+    );
+  }
+
+  private selectAssignableResource(
+    service: CatalogServiceRecord,
+    params: {
+      timeSlot: string;
+      travelerCount: number;
+      resourceId?: string;
+    },
+  ): ServiceResource {
+    const resources = service.resources || [];
+    const requestedResourceId = params.resourceId?.trim();
+
+    const matchingResources = resources.filter((resource) => {
+      if (resource.status !== 'ACTIVE') {
+        return false;
+      }
+
+      if (requestedResourceId && resource.id !== requestedResourceId) {
+        return false;
+      }
+
+      if (!resource.availableTimeSlots.includes(params.timeSlot)) {
+        return false;
+      }
+
+      if (
+        service.type === ServiceType.CAR &&
+        resource.seats !== undefined &&
+        params.travelerCount > resource.seats
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (matchingResources.length === 0) {
+      throw new BadRequestException(
+        requestedResourceId
+          ? `Resource ${requestedResourceId} is not available for ${params.timeSlot}`
+          : `No active resource available for ${params.timeSlot}`,
+      );
+    }
+
+    return matchingResources[0];
+  }
+
+  private defaultCancellationPolicy(type: ServiceType): string {
+    if (type === ServiceType.CAR) {
+      return 'Free cancellation up to 24 hours before pickup.';
+    }
+
+    if (type === ServiceType.GUIDE) {
+      return 'Free cancellation up to 48 hours before guide start.';
+    }
+
+    if (type === ServiceType.ASSISTANT) {
+      return 'Unused assistant hours can be rescheduled within 7 days.';
+    }
+
+    return 'Free cancellation up to 72 hours before departure.';
+  }
+
+  private defaultVoucherTemplate(type: ServiceType): string {
+    if (type === ServiceType.CAR) {
+      return 'Present booking {bookingId} to the driver at pickup.';
+    }
+
+    if (type === ServiceType.GUIDE) {
+      return 'Share booking {bookingId} with your guide at meetup.';
+    }
+
+    if (type === ServiceType.ASSISTANT) {
+      return 'Use booking {bookingId} to activate assistant handoff.';
+    }
+
+    return 'Show booking {bookingId} to the service team on arrival.';
+  }
+
+  private defaultSupportContact(type: ServiceType): ServiceContact {
+    if (type === ServiceType.CAR) {
+      return {
+        name: 'Transport Ops',
+        channel: 'Phone',
+        value: '+86-138-0000-0001',
+      };
+    }
+
+    if (type === ServiceType.GUIDE) {
+      return {
+        name: 'Guide Ops',
+        channel: 'WhatsApp',
+        value: '+86-138-0000-0002',
+      };
+    }
+
+    if (type === ServiceType.ASSISTANT) {
+      return {
+        name: 'Assistant Desk',
+        channel: 'Email',
+        value: 'assistant@sean-tour.local',
+      };
+    }
+
+    return {
+      name: 'Guest Desk',
+      channel: 'WeChat',
+      value: 'sean-tour',
+    };
+  }
+
+  private defaultCapacityForType(
+    type: ServiceType,
+    detail?: ServiceDetailRecord,
+  ): ServiceCapacity {
+    if (type === ServiceType.CAR) {
+      const seats =
+        detail?.__typename === 'CarServiceDetail' ? detail.seats : 7;
+      return {
+        min: 1,
+        max: seats,
+        remaining: 2,
+      };
+    }
+
+    if (type === ServiceType.GUIDE) {
+      return {
+        min: 1,
+        max: 5,
+        remaining: 3,
+      };
+    }
+
+    if (type === ServiceType.ASSISTANT) {
+      return {
+        min: 1,
+        max: 4,
+        remaining: 3,
+      };
+    }
+
+    return {
+      min: 1,
+      max: 6,
+      remaining: 4,
+    };
+  }
+
   private normalizeAmount(value: number): number {
     if (!Number.isFinite(value) || value <= 0) {
       throw new BadRequestException('basePriceAmount must be greater than 0');
     }
 
     return Number(value.toFixed(2));
+  }
+
+  private normalizeDateFilter(value?: string): string | undefined {
+    const normalized = value?.trim();
+
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      throw new BadRequestException('date must use YYYY-MM-DD format');
+    }
+
+    return normalized;
+  }
+
+  private normalizeOptionalPriceFilter(
+    value: number | undefined,
+    fieldName: string,
+  ): number | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    if (!Number.isFinite(value) || value < 0) {
+      throw new BadRequestException(
+        `${fieldName} must be a non-negative number`,
+      );
+    }
+
+    return Number(value.toFixed(2));
+  }
+
+  private matchesRequestedDate(
+    availableTimeSlots: string[] | undefined,
+    requestedDate: string,
+  ): boolean {
+    if (!availableTimeSlots || availableTimeSlots.length === 0) {
+      return false;
+    }
+
+    return availableTimeSlots.some((slot) => slot.includes(requestedDate));
   }
 
   private async logAudit(params: {

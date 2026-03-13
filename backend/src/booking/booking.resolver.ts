@@ -1,11 +1,15 @@
 import { UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthGuard, CurrentUser } from '../auth/auth.guard.service';
+import { AuthGuard, CheckAdmin, CurrentUser } from '../auth/auth.guard.service';
+import { ServiceResource } from '../catalog/dto/service-resource.dto';
 import { BookingService } from './booking.service';
 import { Booking } from './dto/booking.dto';
 import { BookingListInput } from './dto/booking-list.input';
 import { BookingPage } from './dto/booking-page.dto';
 import { CreateBookingInput } from './dto/create-booking.input';
+import { ReassignBookingResourceInput } from './dto/reassign-booking-resource.input';
+import { ServiceResourceSchedule } from './dto/service-resource-schedule.dto';
+import { UpdateBookingStatusInput } from './dto/update-booking-status.input';
 
 @Resolver()
 export class BookingResolver {
@@ -53,6 +57,42 @@ export class BookingResolver {
       this.extractUserId(user),
       bookingId,
     );
+  }
+
+  @Query(() => [ServiceResource])
+  async adminAssignableBookingResources(
+    @CheckAdmin() _: boolean,
+    @Args('bookingId') bookingId: string,
+  ): Promise<ServiceResource[]> {
+    return this.bookingService.listAssignableResourcesByAdmin(bookingId);
+  }
+
+  @Query(() => ServiceResourceSchedule)
+  async adminServiceResourceSchedule(
+    @CheckAdmin() _: boolean,
+    @Args('serviceId') serviceId: string,
+    @Args('date', { nullable: true }) date?: string,
+  ): Promise<ServiceResourceSchedule> {
+    return this.bookingService.getServiceResourceScheduleByAdmin(
+      serviceId,
+      date,
+    );
+  }
+
+  @Mutation(() => Booking)
+  async adminUpdateBookingStatus(
+    @CheckAdmin() _: boolean,
+    @Args('input') input: UpdateBookingStatusInput,
+  ): Promise<Booking> {
+    return this.bookingService.updateBookingStatusByAdmin(input);
+  }
+
+  @Mutation(() => Booking)
+  async adminReassignBookingResource(
+    @CheckAdmin() _: boolean,
+    @Args('input') input: ReassignBookingResourceInput,
+  ): Promise<Booking> {
+    return this.bookingService.reassignBookingResourceByAdmin(input);
   }
 
   private extractUserId(user: Record<string, unknown>): string {

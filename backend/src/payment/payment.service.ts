@@ -4,6 +4,8 @@ import { BookingService } from '../booking/booking.service';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
 import { DBService, PGKVDatabase } from '../common/db.service';
 import { config } from '../config';
+import { NotificationType } from '../notification/dto/notification-type.enum';
+import { NotificationService } from '../notification/notification.service';
 import { CreateUsdtPaymentInput } from './dto/create-usdt-payment.input';
 import { PaymentEventListInput } from './dto/payment-event-list.input';
 import { PaymentEventPage } from './dto/payment-event-page.dto';
@@ -76,6 +78,8 @@ export class PaymentService {
     private readonly dbService: DBService,
     @Optional()
     private readonly paymentWalletService?: PaymentWalletService,
+    @Optional()
+    private readonly notificationService?: NotificationService,
   ) {
     this.travelDB = this.dbService.getDBInstance('travel_kv');
   }
@@ -133,6 +137,12 @@ export class PaymentService {
     };
 
     await this.travelDB.put(`payment:${payment.id}`, payment);
+    await this.notifyPayment(
+      userId,
+      'Payment intent created',
+      `Payment ${payment.id} is ready for booking ${payment.bookingId}.`,
+      `/checkout/${payment.bookingId}`,
+    );
     return this.toPaymentIntent(payment);
   }
 
@@ -282,6 +292,14 @@ export class PaymentService {
     await this.travelDB.put(`payment:${updated.id}`, updated);
     await this.syncBookingStatus(updated);
     await this.logPaymentEvent(updated, input, source, actor);
+    if (payment.status !== updated.status) {
+      await this.notifyPayment(
+        payment.userId,
+        `Payment ${updated.status}`,
+        `Payment ${updated.id} for booking ${updated.bookingId} changed to ${updated.status}.`,
+        `/orders/${updated.bookingId}`,
+      );
+    }
     return this.toPaymentIntent(updated);
   }
 
@@ -516,6 +534,21 @@ export class PaymentService {
   private async syncBookingStatus(payment: PaymentRecord): Promise<void> {
     if (payment.status === PaymentStatus.PAID) {
       await this.bookingService.markBookingPaidById(payment.bookingId);
+      return;
+    }
+
+    if (payment.status === PaymentStatus.REFUNDING) {
+      await this.bookingService.markBookingRefundingById(payment.bookingId);
+      return;
+    }
+
+    if (payment.status === PaymentStatus.REFUNDED) {
+      await this.bookingService.markBookingRefundedById(payment.bookingId);
+      return;
+    }
+
+    if (payment.status === PaymentStatus.EXPIRED) {
+      await this.bookingService.expireBookingById(payment.bookingId);
     }
   }
 
@@ -589,6 +622,13 @@ export class PaymentService {
     };
 
     await this.travelDB.put(`payment:${payment.id}`, normalized);
+    await this.syncBookingStatus(normalized);
+    await this.notifyPayment(
+      payment.userId,
+      'Payment expired',
+      `Payment ${payment.id} expired before on-chain confirmation.`,
+      `/orders/${payment.bookingId}`,
+    );
     return normalized;
   }
 
@@ -734,6 +774,25 @@ export class PaymentService {
   private normalizeTxHash(value?: string): string | undefined {
     const normalized = value?.trim();
     return normalized ? normalized : undefined;
+  }
+
+  private async notifyPayment(
+    userId: string,
+    title: string,
+    message: string,
+    targetPath: string,
+  ): Promise<void> {
+    if (!this.notificationService) {
+      return;
+    }
+
+    await this.notificationService.createNotification({
+      userId,
+      type: NotificationType.PAYMENT,
+      title,
+      message,
+      targetPath,
+    });
   }
 
   private toPaymentRecord(value: unknown): PaymentRecord | null {
