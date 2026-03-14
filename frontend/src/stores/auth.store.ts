@@ -3,6 +3,10 @@ import { readonly, ref } from "vue";
 import { authService } from "../api/authService";
 import { backendAuthService } from "../api/backendAuthService";
 import {
+  backendCurrentUserService,
+  type BackendCurrentUser,
+} from "../api/backendCurrentUserService";
+import {
   clearBackendToken,
   getBackendToken,
   setBackendToken,
@@ -11,6 +15,7 @@ import {
 const user = ref<User | null>(null);
 const isReady = ref(false);
 const backendToken = ref<string | null>(getBackendToken());
+const backendUser = ref<BackendCurrentUser | null>(null);
 
 let initPromise: Promise<void> | null = null;
 let authSubscription: (() => void) | null = null;
@@ -36,11 +41,16 @@ async function syncBackendToken(session: Session | null): Promise<void> {
   if (!accessToken) {
     latestSupabaseAccessToken = null;
     backendToken.value = null;
+    backendUser.value = null;
     clearBackendToken();
     return;
   }
 
-  if (latestSupabaseAccessToken === accessToken && backendToken.value) {
+  if (
+    latestSupabaseAccessToken === accessToken &&
+    backendToken.value &&
+    backendUser.value
+  ) {
     return;
   }
 
@@ -50,6 +60,7 @@ async function syncBackendToken(session: Session | null): Promise<void> {
   if (error || !token) {
     latestSupabaseAccessToken = null;
     backendToken.value = null;
+    backendUser.value = null;
     clearBackendToken();
     return;
   }
@@ -57,6 +68,12 @@ async function syncBackendToken(session: Session | null): Promise<void> {
   latestSupabaseAccessToken = accessToken;
   backendToken.value = token;
   setBackendToken(token);
+
+  try {
+    backendUser.value = await backendCurrentUserService.getCurrentUser(token);
+  } catch {
+    backendUser.value = null;
+  }
 }
 
 async function refreshUser() {
@@ -89,6 +106,7 @@ export async function signOutFromAuthStore() {
     latestSupabaseAccessToken = null;
     user.value = null;
     backendToken.value = null;
+    backendUser.value = null;
     clearBackendToken();
   }
 
@@ -100,6 +118,7 @@ export function useAuthStore() {
     user: readonly(user),
     isReady: readonly(isReady),
     backendToken: readonly(backendToken),
+    backendUser: readonly(backendUser),
     refreshUser,
     signOutFromAuthStore,
   };

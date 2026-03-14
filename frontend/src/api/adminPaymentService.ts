@@ -57,21 +57,7 @@ type AdminUpdatePaymentStatusGraphQL = {
   };
 };
 
-function getAdminAuthCodeOrThrow(): string {
-  const adminAuthCode = (import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-
-  if (!adminAuthCode) {
-    throw new Error("VITE_BACKEND_ADMIN_AUTH_CODE is required for admin operations.");
-  }
-
-  return adminAuthCode;
-}
-
 export const adminPaymentService = {
-  isAdminConfigured(): boolean {
-    return !!(import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-  },
-
   async listPaymentEvents(params?: {
     eventId?: string;
     paymentId?: string;
@@ -89,7 +75,6 @@ export const adminPaymentService = {
     offset: number;
     hasMore: boolean;
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
     const limit = Math.min(Math.max(params?.limit ?? 50, 1), 100);
     const offset = Math.max(params?.offset ?? 0, 0);
 
@@ -134,9 +119,6 @@ export const adminPaymentService = {
           },
         },
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return data.adminPaymentEvents;
@@ -151,8 +133,6 @@ export const adminPaymentService = {
     confirmations: number;
     updatedAt: string;
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminUpdatePaymentStatusGraphQL>({
       query: `
         mutation AdminUpdatePaymentStatus($input: UpdatePaymentStatusInput!) {
@@ -169,9 +149,6 @@ export const adminPaymentService = {
       `,
       variables: {
         input,
-      },
-      headers: {
-        admin_auth_code: adminAuthCode,
       },
     });
 

@@ -4,6 +4,7 @@ import { BookingService } from '../booking/booking.service';
 import { BookingStatus } from '../booking/dto/booking-status.enum';
 import { DBService, PGKVDatabase } from '../common/db.service';
 import { config } from '../config';
+import { AsyncLockManager } from '../helpers/dbUtils/KVCache';
 import { NotificationType } from '../notification/dto/notification-type.enum';
 import { NotificationService } from '../notification/notification.service';
 import { CreateUsdtPaymentInput } from './dto/create-usdt-payment.input';
@@ -69,6 +70,8 @@ type SearchJsonRow = {
   updated_at?: Date;
 };
 
+const paymentCreationLockManager = new AsyncLockManager();
+
 @Injectable()
 export class PaymentService {
   private readonly travelDB: PGKVDatabase;
@@ -88,76 +91,95 @@ export class PaymentService {
     userId: string,
     input: CreateUsdtPaymentInput,
   ): Promise<PaymentIntent> {
-    const booking = await this.bookingService.getBookingByIdForUser(
-      userId,
-      input.bookingId,
+    const normalizedBookingId = input.bookingId.trim();
+    if (!normalizedBookingId) {
+      throw new BadRequestException('bookingId is required');
+    }
+
+    const release = await paymentCreationLockManager.acquireLock(
+      `payment:create:${userId}:${normalizedBookingId}`,
     );
 
-    if (booking.status !== BookingStatus.PENDING_PAYMENT) {
-      throw new BadRequestException(
-        'Only PENDING_PAYMENT booking can create payment intent',
+    try {
+      const booking = await this.bookingService.getBookingByIdForUser(
+        userId,
+        normalizedBookingId,
       );
+      const existing = await this.getExistingPaymentByBooking(
+        booking.id,
+        userId,
+      );
+
+      if (existing) {
+        return this.toPaymentIntent(existing);
+      }
+
+      if (booking.status !== BookingStatus.PENDING_PAYMENT) {
+        throw new BadRequestException(
+          'Only PENDING_PAYMENT booking can create payment intent',
+        );
+      }
+
+      const expectedAmount = (
+        booking.serviceSnapshot.basePrice.amount * booking.travelerCount
+      ).toFixed(2);
+      const createdAt = new Date();
+      const paymentId = this.buildPaymentId(booking.id);
+      const addressAllocation = await this.allocatePaymentAddress({
+        paymentId,
+        expectedAmount,
+        createdAt,
+      });
+
+      const payment: PaymentRecord = {
+        entityType: 'PAYMENT',
+        id: paymentId,
+        bookingId: booking.id,
+        userId,
+        token: 'USDT',
+        network: 'BSC',
+        tokenStandard: 'ERC20',
+        expectedAmount,
+        paidAmount: '0.00',
+        payAddress: addressAllocation.payAddress,
+        txHash: undefined,
+        confirmations: 0,
+        status: PaymentStatus.PENDING,
+        expiredAt: addressAllocation.expiredAt,
+        walletOrderHash: addressAllocation.walletOrderHash,
+        walletIndex: addressAllocation.walletIndex,
+        createdAt: createdAt.toISOString(),
+        updatedAt: createdAt.toISOString(),
+      };
+
+      await this.travelDB.put(`payment:${payment.id}`, payment);
+      await this.notifyPayment(
+        userId,
+        'Payment intent created',
+        `Payment ${payment.id} is ready for booking ${payment.bookingId}.`,
+        `/checkout/${payment.bookingId}`,
+      );
+      return this.toPaymentIntent(payment);
+    } finally {
+      release();
     }
-
-    const existing = await this.findReusablePendingPayment(booking.id, userId);
-    if (existing) {
-      return this.toPaymentIntent(existing);
-    }
-
-    const expectedAmount = (
-      booking.serviceSnapshot.basePrice.amount * booking.travelerCount
-    ).toFixed(2);
-    const createdAt = new Date();
-    const paymentId = this.generatePaymentId();
-    const addressAllocation = await this.allocatePaymentAddress({
-      paymentId,
-      expectedAmount,
-      createdAt,
-    });
-
-    const payment: PaymentRecord = {
-      entityType: 'PAYMENT',
-      id: paymentId,
-      bookingId: booking.id,
-      userId,
-      token: 'USDT',
-      network: 'BSC',
-      tokenStandard: 'ERC20',
-      expectedAmount,
-      paidAmount: '0.00',
-      payAddress: addressAllocation.payAddress,
-      txHash: undefined,
-      confirmations: 0,
-      status: PaymentStatus.PENDING,
-      expiredAt: addressAllocation.expiredAt,
-      walletOrderHash: addressAllocation.walletOrderHash,
-      walletIndex: addressAllocation.walletIndex,
-      createdAt: createdAt.toISOString(),
-      updatedAt: createdAt.toISOString(),
-    };
-
-    await this.travelDB.put(`payment:${payment.id}`, payment);
-    await this.notifyPayment(
-      userId,
-      'Payment intent created',
-      `Payment ${payment.id} is ready for booking ${payment.bookingId}.`,
-      `/checkout/${payment.bookingId}`,
-    );
-    return this.toPaymentIntent(payment);
   }
 
   async getPaymentByBooking(
     userId: string,
     bookingId: string,
   ): Promise<PaymentIntent | null> {
-    await this.bookingService.getBookingByIdForUser(userId, bookingId);
+    const booking = await this.bookingService.getBookingByIdForUser(
+      userId,
+      bookingId,
+    );
 
-    const payments = await this.getPaymentsByBooking(userId, bookingId);
-    if (payments.length === 0) {
+    const payment = await this.getExistingPaymentByBooking(booking.id, userId);
+    if (!payment) {
       return null;
     }
 
-    return this.toPaymentIntent(payments[0]);
+    return this.toPaymentIntent(payment);
   }
 
   async listPaymentEventsByBooking(
@@ -303,19 +325,17 @@ export class PaymentService {
     return this.toPaymentIntent(updated);
   }
 
-  private async findReusablePendingPayment(
+  private async getExistingPaymentByBooking(
     bookingId: string,
     userId: string,
   ): Promise<PaymentRecord | null> {
-    const payments = await this.getPaymentsByBooking(userId, bookingId);
-
-    for (const payment of payments) {
-      if (this.isPendingStatus(payment.status)) {
-        return payment;
-      }
+    const indexed = await this.getIndexedPaymentByBooking(bookingId);
+    if (indexed && indexed.userId === userId) {
+      return this.normalizeExpiredPayment(indexed);
     }
 
-    return null;
+    const payments = await this.getPaymentsByBooking(userId, bookingId);
+    return payments[0] || null;
   }
 
   private async getPaymentsByBooking(
@@ -386,6 +406,11 @@ export class PaymentService {
   private async getLatestPaymentByBooking(
     bookingId: string,
   ): Promise<PaymentRecord | null> {
+    const indexed = await this.getIndexedPaymentByBooking(bookingId);
+    if (indexed) {
+      return this.normalizeExpiredPayment(indexed);
+    }
+
     const result = await this.travelDB.searchJson({
       contains: {
         entityType: 'PAYMENT',
@@ -401,7 +426,23 @@ export class PaymentService {
       return null;
     }
 
-    return this.toPaymentRecord(rows[0].value);
+    const payment = this.toPaymentRecord(rows[0].value);
+    if (!payment) {
+      return null;
+    }
+
+    return this.normalizeExpiredPayment(payment);
+  }
+
+  private async getIndexedPaymentByBooking(
+    bookingId: string,
+  ): Promise<PaymentRecord | null> {
+    const payment = await this.getPaymentById(this.buildPaymentId(bookingId));
+    if (!payment) {
+      return null;
+    }
+
+    return payment;
   }
 
   private async findPaymentByEventId(
@@ -896,8 +937,8 @@ export class PaymentService {
     return 'Unexpected payment wallet error';
   }
 
-  private generatePaymentId(): string {
-    return `pay_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+  private buildPaymentId(bookingId: string): string {
+    return `pay_${bookingId.trim()}`;
   }
 
   private generatePaymentEventId(): string {

@@ -1,7 +1,9 @@
 import { Resolver, Args, Query, Mutation } from '@nestjs/graphql';
 import { AuthService } from './auth.service';
 import { UseGuards } from '@nestjs/common';
-import { AuthGuard, CurrentUser } from './auth.guard.service';
+import { AdminGuard, AuthGuard, CurrentUser } from './auth.guard.service';
+import { AdminAccess } from './dto/admin-access.dto';
+import { AdminSetAccessInput } from './dto/admin-set-access.input';
 import { LoginResult } from './dto/login-result.dto';
 import { EmailAuthInput } from './dto/email-auth.input';
 import { GoogleLoginInput } from './dto/google-login.input';
@@ -39,7 +41,22 @@ export class AuthResolver {
 
   @Query(() => CurrentUserDto)
   @UseGuards(AuthGuard)
-  currentUser(@CurrentUser() user: Record<string, unknown>) {
+  async currentUser(@CurrentUser() user: Record<string, unknown>) {
     return this.authService.getCurrentUser(user);
+  }
+
+  @Query(() => [AdminAccess])
+  @UseGuards(AdminGuard)
+  async adminAccessEntries(): Promise<AdminAccess[]> {
+    return this.authService.listAdminAccessEntries();
+  }
+
+  @Mutation(() => AdminAccess)
+  @UseGuards(AdminGuard)
+  async adminSetAccess(
+    @CurrentUser() user: Record<string, unknown> | undefined,
+    @Args('input') input: AdminSetAccessInput,
+  ): Promise<AdminAccess> {
+    return this.authService.setAdminAccess(input, user);
   }
 }

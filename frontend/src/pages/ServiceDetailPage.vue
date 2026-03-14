@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Card from "primevue/card";
@@ -120,9 +120,13 @@ async function createBooking(): Promise<void> {
   }
 }
 
-onMounted(async () => {
-  await loadServiceDetail();
-});
+watch(
+  () => route.fullPath,
+  async () => {
+    await loadServiceDetail();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

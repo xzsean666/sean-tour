@@ -39,6 +39,10 @@ Required keys for auth:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `WECHAT_APP_ID` / `WECHAT_APP_SECRET` (only needed for WeChat login)
+- `ADMIN_USER_IDS` / `ADMIN_USER_EMAILS` (optional bootstrap admins)
+- `ADMIN_AUTH_CODE` (optional server-to-server fallback for `/payment/callback/usdt` and `/payment/sync`)
+- `CORS_ORIGIN` (optional, for local/frontend cross-origin access)
+- `GRAPHQL_PLAYGROUND_ENABLED` / `GRAPHQL_INTROSPECTION_ENABLED` (optional GraphQL devtools switches)
 
 ## GraphQL Auth API
 
@@ -54,38 +58,49 @@ Mutations:
 
 Query:
 
-- `currentUser` (requires `Authorization: Bearer <token>`)
+- `currentUser` (requires `Authorization: Bearer <token>`, returns `is_admin`)
+
+Admin-only auth management:
+
+- `adminAccessEntries` (requires admin login, lists env bootstrap + DB-managed admin grants)
+- `adminSetAccess(input: { userId?, email?, displayName?, note?, enabled })`
+
+Notes:
+
+- Browser admin pages rely on logged-in backend admin access and `currentUser.is_admin`.
+- Env bootstrap admins are read-only in the UI; runtime grants are maintained via `/admin/access`.
+- `ADMIN_AUTH_CODE` no longer bypasses GraphQL admin resolvers; it is limited to REST callback/sync tools.
 
 ## Project setup
 
 ```bash
-$ npm install
+$ pnpm --dir backend install
 ```
 
 ## Compile and run the project
 
 ```bash
 # development
-$ npm run start
+$ pnpm --dir backend start
 
 # watch mode
-$ npm run start:dev
+$ pnpm --dir backend start:dev
 
 # production mode
-$ npm run start:prod
+$ pnpm --dir backend start:prod
 ```
 
 ## Run tests
 
 ```bash
 # unit tests
-$ npm run test
+$ pnpm --dir backend test
 
 # e2e tests
-$ npm run test:e2e
+$ pnpm --dir backend test:e2e
 
 # test coverage
-$ npm run test:cov
+$ pnpm --dir backend test:cov
 ```
 
 ## Deployment

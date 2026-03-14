@@ -18,6 +18,7 @@ import {
   type ServiceType,
 } from "../api/adminCatalogService";
 import type { ServiceResource } from "../api/travelService";
+import { useAuthStore } from "../stores/auth.store";
 
 type ServiceForm = {
   id: string;
@@ -136,8 +137,9 @@ const bookingAssignmentLoading = ref<Record<string, boolean>>({});
 const bookingAssignmentActionLoading = ref<Record<string, boolean>>({});
 const form = reactive<ServiceForm>(createEmptyForm());
 const bookingAssignmentSelections = reactive<Record<string, string>>({});
+const { backendUser } = useAuthStore();
 
-const adminConfigured = computed(() => adminCatalogService.isAdminConfigured());
+const hasAdminAccess = computed(() => !!backendUser.value?.isAdmin);
 const selectedService = computed(() =>
   services.value.find((item) => item.id === selectedServiceId.value),
 );
@@ -553,7 +555,7 @@ async function loadServices(): Promise<void> {
 }
 
 async function loadAuditLogs(serviceId: string): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     auditLogs.value = [];
     auditTotal.value = 0;
     return;
@@ -575,7 +577,7 @@ async function loadAuditLogs(serviceId: string): Promise<void> {
 }
 
 async function loadResourceSchedule(serviceId: string): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     resourceSchedule.value = null;
     return;
   }
@@ -837,10 +839,8 @@ async function saveService(): Promise<void> {
   successMessage.value = "";
 
   try {
-    if (!adminConfigured.value) {
-      throw new Error(
-        "VITE_BACKEND_ADMIN_AUTH_CODE is not configured in frontend/.env.",
-      );
+    if (!hasAdminAccess.value) {
+      throw new Error("This account does not have admin access.");
     }
 
     const input = buildMutationInput();
@@ -948,9 +948,8 @@ onMounted(async () => {
     </p>
   </section>
 
-  <Message v-if="!adminConfigured" severity="warn" class="mt-4">
-    Missing <code>VITE_BACKEND_ADMIN_AUTH_CODE</code>. Save action will fail
-    until it is configured.
+  <Message v-if="!hasAdminAccess" severity="warn" class="mt-4">
+    This account does not have admin access.
   </Message>
   <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
   <Message v-if="successMessage" severity="success" class="mt-4">{{ successMessage }}</Message>

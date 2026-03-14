@@ -10,6 +10,8 @@ const OrderDetailPage = () => import('../pages/OrderDetailPage.vue');
 const ProfilePage = () => import('../pages/ProfilePage.vue');
 const FaqPage = () => import('../pages/FaqPage.vue');
 const SupportPage = () => import('../pages/SupportPage.vue');
+const AdminSupportPage = () => import('../pages/AdminSupportPage.vue');
+const AdminAccessPage = () => import('../pages/AdminAccessPage.vue');
 const AssistantLandingPage = () => import('../pages/AssistantLandingPage.vue');
 const AssistantPage = () => import('../pages/AssistantPage.vue');
 const AdminServicesPage = () => import('../pages/AdminServicesPage.vue');
@@ -121,30 +123,43 @@ const routes: RouteRecordRaw[] = [
     path: '/support',
     name: 'support',
     component: SupportPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/support',
+    name: 'admin-support',
+    component: AdminSupportPage,
+    meta: { requiresAuth: true, requiresSupportWorkspace: true },
+  },
+  {
+    path: '/admin/access',
+    name: 'admin-access',
+    component: AdminAccessPage,
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/services',
     name: 'admin-services',
     component: AdminServicesPage,
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/payments',
     name: 'admin-payments',
     component: AdminPaymentsPage,
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/orders',
     name: 'admin-orders',
     component: AdminOrdersPage,
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/assistant',
     name: 'admin-assistant',
     component: AdminAssistantPage,
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/auth/login',
@@ -186,13 +201,25 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   await initAuthStore();
-  const { user } = useAuthStore();
+  const { user, backendUser } = useAuthStore();
 
   if (to.meta.requiresAuth && !user.value) {
     return {
       path: '/auth/login',
       query: { redirect: to.fullPath },
     };
+  }
+
+  if (to.meta.requiresAdmin && !backendUser.value?.isAdmin) {
+    return { path: '/' };
+  }
+
+  if (
+    to.meta.requiresSupportWorkspace &&
+    !backendUser.value?.isAdmin &&
+    !backendUser.value?.isSupportAgent
+  ) {
+    return { path: '/support' };
   }
 
   if (to.meta.guestOnly && user.value) {

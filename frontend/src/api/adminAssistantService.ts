@@ -36,16 +36,6 @@ type AdminBatchAssignAssistantSessionsGraphQL = {
   adminBatchAssignAssistantSessions: AssistantSessionItem[];
 };
 
-function getAdminAuthCodeOrThrow(): string {
-  const adminAuthCode = (import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-
-  if (!adminAuthCode) {
-    throw new Error("VITE_BACKEND_ADMIN_AUTH_CODE is required for admin operations.");
-  }
-
-  return adminAuthCode;
-}
-
 const assistantSessionFields = `
   id
   bookingId
@@ -65,10 +55,6 @@ const assistantSessionFields = `
 `;
 
 export const adminAssistantService = {
-  isAdminConfigured(): boolean {
-    return !!(import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-  },
-
   async listSessions(params?: {
     sessionId?: string;
     bookingId?: string;
@@ -84,7 +70,6 @@ export const adminAssistantService = {
     offset: number;
     hasMore: boolean;
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
     const limit = Math.min(Math.max(params?.limit ?? 20, 1), 100);
     const offset = Math.max(params?.offset ?? 0, 0);
 
@@ -115,17 +100,12 @@ export const adminAssistantService = {
           },
         },
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return data.adminAssistantSessions;
   },
 
   async updateSession(input: AdminUpdateAssistantSessionInput): Promise<AssistantSessionItem> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminUpdateAssistantSessionGraphQL>({
       query: `
         mutation AdminUpdateAssistantSession($input: AdminUpdateAssistantSessionInput!) {
@@ -137,9 +117,6 @@ export const adminAssistantService = {
       variables: {
         input,
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return data.adminUpdateAssistantSession;
@@ -148,8 +125,6 @@ export const adminAssistantService = {
   async batchAssignSessions(
     input: AdminBatchAssignAssistantSessionsInput,
   ): Promise<AssistantSessionItem[]> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data =
       await requestBackendGraphQL<AdminBatchAssignAssistantSessionsGraphQL>({
         query: `
@@ -161,9 +136,6 @@ export const adminAssistantService = {
         `,
         variables: {
           input,
-        },
-        headers: {
-          admin_auth_code: adminAuthCode,
         },
       });
 

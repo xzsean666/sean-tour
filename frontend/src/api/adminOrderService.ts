@@ -41,16 +41,6 @@ type AdminReassignBookingResourceGraphQL = {
   };
 };
 
-function getAdminAuthCodeOrThrow(): string {
-  const adminAuthCode = (import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-
-  if (!adminAuthCode) {
-    throw new Error("VITE_BACKEND_ADMIN_AUTH_CODE is required for admin operations.");
-  }
-
-  return adminAuthCode;
-}
-
 const orderFields = `
   id
   bookingId
@@ -87,10 +77,6 @@ const orderFields = `
 `;
 
 export const adminOrderService = {
-  isAdminConfigured(): boolean {
-    return !!(import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-  },
-
   async listOrders(params?: {
     bookingId?: string;
     serviceId?: string;
@@ -106,7 +92,6 @@ export const adminOrderService = {
     offset: number;
     hasMore: boolean;
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
     const limit = Math.min(Math.max(params?.limit ?? 20, 1), 100);
     const offset = Math.max(params?.offset ?? 0, 0);
 
@@ -137,17 +122,12 @@ export const adminOrderService = {
           },
         },
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return data.adminOrders;
   },
 
   async getOrderDetail(orderId: string): Promise<OrderItem> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminOrderDetailGraphQL>({
       query: `
         query AdminOrderDetail($orderId: String!) {
@@ -158,9 +138,6 @@ export const adminOrderService = {
       `,
       variables: {
         orderId,
-      },
-      headers: {
-        admin_auth_code: adminAuthCode,
       },
     });
 
@@ -175,8 +152,6 @@ export const adminOrderService = {
     id: string;
     status: BookingStatus;
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminUpdateBookingStatusGraphQL>({
       query: `
         mutation AdminUpdateBookingStatus($input: UpdateBookingStatusInput!) {
@@ -189,9 +164,6 @@ export const adminOrderService = {
       variables: {
         input,
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return data.adminUpdateBookingStatus;
@@ -200,8 +172,6 @@ export const adminOrderService = {
   async listAssignableBookingResources(
     bookingId: string,
   ): Promise<ServiceResource[]> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminAssignableBookingResourcesGraphQL>({
       query: `
         query AdminAssignableBookingResources($bookingId: String!) {
@@ -218,9 +188,6 @@ export const adminOrderService = {
       variables: {
         bookingId,
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return data.adminAssignableBookingResources;
@@ -236,8 +203,6 @@ export const adminOrderService = {
       label: string;
     };
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminReassignBookingResourceGraphQL>({
       query: `
         mutation AdminReassignBookingResource($input: ReassignBookingResourceInput!) {
@@ -252,9 +217,6 @@ export const adminOrderService = {
       `,
       variables: {
         input,
-      },
-      headers: {
-        admin_auth_code: adminAuthCode,
       },
     });
 

@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { AdminAccessService } from './admin-access.service';
 import { WeChatService } from './wechat.service';
 import { UserService } from './user.service';
 import { SupabaseService } from './supabase.service';
+import { AdminAccess } from './dto/admin-access.dto';
+import { AdminSetAccessInput } from './dto/admin-set-access.input';
 import { EmailAuthInput } from './dto/email-auth.input';
 import { GoogleLoginInput } from './dto/google-login.input';
 import { SupabaseTokenLoginInput } from './dto/supabase-token-login.input';
 import { CurrentUserDto } from './dto/current-user.dto';
+import { RoleAccessService } from './role-access.service';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +17,8 @@ export class AuthService {
     private wechatService: WeChatService,
     private userService: UserService,
     private supabaseService: SupabaseService,
+    private adminAccessService: AdminAccessService,
+    private roleAccessService: RoleAccessService,
   ) {}
 
   async registerWithEmail(input: EmailAuthInput) {
@@ -95,14 +101,40 @@ export class AuthService {
     });
   }
 
-  getCurrentUser(user: Record<string, unknown>): CurrentUserDto {
+  async getCurrentUser(user: Record<string, unknown>): Promise<CurrentUserDto> {
+    const userId = typeof user.user_id === 'string' ? user.user_id : '';
+    const email = typeof user.email === 'string' ? user.email : undefined;
+    const [isAdmin, isSupportAgent] = await Promise.all([
+      this.adminAccessService.isAdminIdentity({
+        userId,
+        email,
+      }),
+      this.roleAccessService.isRoleGranted('SUPPORT_AGENT', {
+        userId,
+        email,
+      }),
+    ]);
+
     return {
-      user_id: typeof user.user_id === 'string' ? user.user_id : '',
+      user_id: userId,
       user_account:
         typeof user.user_account === 'string' ? user.user_account : '',
       provider: typeof user.provider === 'string' ? user.provider : '',
-      email: typeof user.email === 'string' ? user.email : undefined,
+      email,
+      is_admin: isAdmin,
+      is_support_agent: isSupportAgent,
     };
+  }
+
+  async listAdminAccessEntries(): Promise<AdminAccess[]> {
+    return this.adminAccessService.listAdminAccessEntries();
+  }
+
+  async setAdminAccess(
+    input: AdminSetAccessInput,
+    actorUser: Record<string, unknown> | undefined,
+  ): Promise<AdminAccess> {
+    return this.adminAccessService.setAdminAccess(input, actorUser);
   }
 
   private assertEmailAndPassword(email?: string, password?: string) {

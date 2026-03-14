@@ -1,6 +1,6 @@
 import { UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Args, Query, Resolver } from '@nestjs/graphql';
-import { AuthGuard, CheckAdmin, CurrentUser } from '../auth/auth.guard.service';
+import { AdminGuard, AuthGuard, CurrentUser } from '../auth/auth.guard.service';
 import { OrderListInput } from './dto/order-list.input';
 import { OrderPage } from './dto/order-page.dto';
 import { Order } from './dto/order.dto';
@@ -29,18 +29,16 @@ export class OrderResolver {
   }
 
   @Query(() => OrderPage)
+  @UseGuards(AdminGuard)
   async adminOrders(
-    @CheckAdmin() _: boolean,
     @Args('input', { nullable: true }) input?: OrderListInput,
   ): Promise<OrderPage> {
     return this.orderService.adminOrders(input);
   }
 
   @Query(() => Order)
-  async adminOrderDetail(
-    @CheckAdmin() _: boolean,
-    @Args('orderId') orderId: string,
-  ): Promise<Order> {
+  @UseGuards(AdminGuard)
+  async adminOrderDetail(@Args('orderId') orderId: string): Promise<Order> {
     return this.orderService.adminOrderDetail(orderId);
   }
 

@@ -16,6 +16,7 @@ import type {
   AssistantSessionItem,
   AssistantSessionStatus,
 } from "../api/assistantService";
+import { useAuthStore } from "../stores/auth.store";
 
 const SESSION_STATUSES: AssistantSessionStatus[] = [
   "REQUESTED",
@@ -60,8 +61,9 @@ const batchForm = reactive({
   assignedAgent: "",
   internalNote: "",
 });
+const { backendUser } = useAuthStore();
 
-const adminConfigured = computed(() => adminAssistantService.isAdminConfigured());
+const hasAdminAccess = computed(() => !!backendUser.value?.isAdmin);
 const selectedSession = computed(() =>
   sessions.value.find((item) => item.id === selectedSessionId.value),
 );
@@ -162,7 +164,7 @@ function toggleAllSelections(checked: boolean): void {
 }
 
 async function loadSessionsAtOffset(nextOffset: number): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     sessions.value = [];
     total.value = 0;
     offset.value = 0;
@@ -296,8 +298,8 @@ onMounted(async () => {
     </p>
   </section>
 
-  <Message v-if="!adminConfigured" severity="warn" class="mt-4">
-    Missing <code>VITE_BACKEND_ADMIN_AUTH_CODE</code>. Admin actions will fail until it is configured.
+  <Message v-if="!hasAdminAccess" severity="warn" class="mt-4">
+    This account does not have admin access.
   </Message>
   <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
   <Message v-if="successMessage" severity="success" class="mt-4">{{ successMessage }}</Message>

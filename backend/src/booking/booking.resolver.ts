@@ -1,6 +1,6 @@
 import { UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthGuard, CheckAdmin, CurrentUser } from '../auth/auth.guard.service';
+import { AdminGuard, AuthGuard, CurrentUser } from '../auth/auth.guard.service';
 import { ServiceResource } from '../catalog/dto/service-resource.dto';
 import { BookingService } from './booking.service';
 import { Booking } from './dto/booking.dto';
@@ -60,16 +60,16 @@ export class BookingResolver {
   }
 
   @Query(() => [ServiceResource])
+  @UseGuards(AdminGuard)
   async adminAssignableBookingResources(
-    @CheckAdmin() _: boolean,
     @Args('bookingId') bookingId: string,
   ): Promise<ServiceResource[]> {
     return this.bookingService.listAssignableResourcesByAdmin(bookingId);
   }
 
   @Query(() => ServiceResourceSchedule)
+  @UseGuards(AdminGuard)
   async adminServiceResourceSchedule(
-    @CheckAdmin() _: boolean,
     @Args('serviceId') serviceId: string,
     @Args('date', { nullable: true }) date?: string,
   ): Promise<ServiceResourceSchedule> {
@@ -80,16 +80,16 @@ export class BookingResolver {
   }
 
   @Mutation(() => Booking)
+  @UseGuards(AdminGuard)
   async adminUpdateBookingStatus(
-    @CheckAdmin() _: boolean,
     @Args('input') input: UpdateBookingStatusInput,
   ): Promise<Booking> {
     return this.bookingService.updateBookingStatusByAdmin(input);
   }
 
   @Mutation(() => Booking)
+  @UseGuards(AdminGuard)
   async adminReassignBookingResource(
-    @CheckAdmin() _: boolean,
     @Args('input') input: ReassignBookingResourceInput,
   ): Promise<Booking> {
     return this.bookingService.reassignBookingResourceByAdmin(input);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Card from "primevue/card";
@@ -163,9 +163,13 @@ async function goNextPage(): Promise<void> {
   await loadServices(offset.value + PAGE_SIZE);
 }
 
-onMounted(async () => {
-  await loadServices(0);
-});
+watch(
+  () => route.fullPath,
+  async () => {
+    await loadServices(0);
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

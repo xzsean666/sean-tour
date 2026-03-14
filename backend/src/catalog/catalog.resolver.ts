@@ -1,5 +1,7 @@
+import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { CheckAdmin } from '../auth/auth.guard.service';
+import { buildAdminActor } from '../auth/admin-access.util';
+import { AdminGuard, CurrentUser } from '../auth/auth.guard.service';
 import { CatalogService } from './catalog.service';
 import { DeleteServiceInput } from './dto/delete-service.input';
 import { ServiceAuditListInput } from './dto/service-audit-list.input';
@@ -33,32 +35,35 @@ export class CatalogResolver {
   }
 
   @Mutation(() => ServiceItem)
+  @UseGuards(AdminGuard)
   async adminUpsertService(
-    @CheckAdmin() _: boolean,
+    @CurrentUser() user: Record<string, unknown> | undefined,
     @Args('input') input: UpsertServiceInput,
   ): Promise<ServiceItem> {
-    return this.catalogService.upsertService(input);
+    return this.catalogService.upsertService(input, buildAdminActor(user));
   }
 
   @Mutation(() => ServiceItem)
+  @UseGuards(AdminGuard)
   async adminSetServiceStatus(
-    @CheckAdmin() _: boolean,
+    @CurrentUser() user: Record<string, unknown> | undefined,
     @Args('input') input: SetServiceStatusInput,
   ): Promise<ServiceItem> {
-    return this.catalogService.setServiceStatus(input);
+    return this.catalogService.setServiceStatus(input, buildAdminActor(user));
   }
 
   @Mutation(() => Boolean)
+  @UseGuards(AdminGuard)
   async adminDeleteService(
-    @CheckAdmin() _: boolean,
+    @CurrentUser() user: Record<string, unknown> | undefined,
     @Args('input') input: DeleteServiceInput,
   ): Promise<boolean> {
-    return this.catalogService.deleteService(input);
+    return this.catalogService.deleteService(input, buildAdminActor(user));
   }
 
   @Query(() => ServiceAuditPage)
+  @UseGuards(AdminGuard)
   async adminServiceAuditLogs(
-    @CheckAdmin() _: boolean,
     @Args('input', { nullable: true }) input?: ServiceAuditListInput,
   ): Promise<ServiceAuditPage> {
     return this.catalogService.listServiceAuditLogs(input);

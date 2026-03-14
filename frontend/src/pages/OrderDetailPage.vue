@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import Card from "primevue/card";
@@ -127,9 +127,13 @@ async function loadOrderDetail() {
   }
 }
 
-onMounted(async () => {
-  await loadOrderDetail();
-});
+watch(
+  orderId,
+  async () => {
+    await loadOrderDetail();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

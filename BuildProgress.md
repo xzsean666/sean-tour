@@ -1,7 +1,7 @@
 # Build Progress
 
 ## Meta
-- Last Updated: 2026-03-13
+- Last Updated: 2026-03-14
 - Owner: Sean + Codex
 - Current Phase: MVP Capability Completion
 
@@ -20,6 +20,55 @@
 
 ## Current Progress
 - 已完成：
+  - 已完成一轮质量加固落地：`ADMIN_AUTH_CODE` 现仅允许 `/payment/callback/usdt` 与 `/payment/sync` 这类 server-to-server REST 入口兜底，不再穿透 GraphQL admin resolver；GraphQL Playground / introspection 已增加环境开关并默认仅在开发环境开启。
+  - 已补齐本地联调基础设施：backend 启动时现支持基于 `CORS_ORIGIN` 的跨域配置，开发环境默认允许本地前端调试，不再依赖仓库外额外网关才能联调。
+  - 已修正 notification 分页/导出截断：`myNotifications` 非 unread 查询现直接走 DB offset + total，`unreadOnly` 与数据导出改为批次遍历，不再卡死在前 200 条。
+  - 已修正客服停用回退逻辑：停用 support agent 时，`WAITING_USER/RESOLVED` 会话不再错误打回 `WAITING_AGENT`；仅真正待客服处理的会话会重回待分配，同时新增 `UNASSIGNED` 审计动作。
+  - 已补齐 support 数据读取正确性：会话、消息与审计读取改为批次遍历，不再受单次 500 条硬上限影响；首次会话 ID 也改为按用户稳定生成，避免并发首条消息写出重复会话。
+  - 已收口支付创建幂等：`createUsdtPayment` 改为按 booking 稳定生成 `paymentId`，并在服务内按 `bookingId + userId` 串行化创建；同 booking 的并发/重试请求会返回同一条 payment intent，不再重复分配链上收款地址，过期 payment 的重试也只会回已有记录而不会再创建新单。
+  - 已优化 support 队列分页到底：会话记录新增 `priority/isAssigned` 投影字段，并在首轮复杂筛选时自动 backfill 老数据；现在 `supportConversationQueue/adminSupportConversations` 连 `priority/unassignedOnly` 也可直接走 DB 分页与总数统计，不再依赖全量扫描。
+  - 已优化 support 审计分页：`supportConversationAuditLogs` 现直接走 DB 分页与总数统计，大会话的时间线筛选不再批次扫完整审计。
+  - 已补齐 frontend dev proxy：前端 backend GraphQL 默认改为同源 `/graphql`，Vite dev server 新增到 backend 的 `/graphql` 代理；本地 `pnpm --dir frontend dev` + `pnpm --dir backend start:dev` 现在不需要再手工写死跨域地址即可联调。
+  - 已补齐前端同组件复用刷新：`/packages|/guides|/cars` 分类页、服务详情、checkout、order detail 现在会在路由变化时自动重载数据，不再出现标题已变而数据仍是上一页的情况。
+  - 本轮质量加固验证通过：`pnpm --dir frontend build`、`pnpm --dir backend build`、`pnpm --dir backend exec eslint "src/**/*.ts" "test/**/*.ts"`、`pnpm --dir backend exec jest --runInBand`。
+  - 已继续补做第二轮 review：确认 `ADMIN_AUTH_CODE` 当前仍可穿透所有 `AdminGuard` GraphQL 接口、通知列表/导出存在 200 条隐式截断、GraphQL Playground 生产默认关闭策略尚未补齐；已把这些项纳入下一轮质量加固清单。
+  - 已完成当前前后端 review：确认 `frontend build`、`backend build`、`backend exec eslint "src/**/*.ts" "test/**/*.ts"`、`backend exec jest --runInBand` 均通过；同时识别出本地联调、客服状态流转、列表扩展性与幂等性方面的后续优先修复项。
+  - 已补齐 `/admin/support` 的 URL 可分享视图：队列筛选、分页 offset、当前选中会话、audit actor/action 过滤现在都会同步到 query，支持浏览器前进后退和直接分享当前工作台视图。
+  - 客服工作台 URL query 同步本轮验证通过：`pnpm --dir frontend build`。
+  - 已增强客服工作台恢复态可见性：`REOPENED` 审计现在带 `reopenedFromStatus`，`/admin/support` 详情页会直接展示“从 RESOLVED / CLOSED 重开”，避免客服只能靠 summary 文案猜。
+  - 已补齐客服工作台快捷筛选：队列新增 `All Activity / Waiting Agent / Need Agent Reply / Waiting User / Resolved / Closed` 快捷按钮，减少频繁切下拉与勾选框。
+  - 客服工作台恢复态展示与快捷筛选本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已完成 `support RESOLVED` 工作流：客服/管理员现在可在 `/admin/support` 把会话标记为 `RESOLVED`，并在用户或客服后续再次发消息时自动重开；对应 audit 时间线新增 `RESOLVED` 动作。
+  - 已同步更新 `docs/crypto-travel-cn-design.md`：`SupportConversation` 状态机、GraphQL 草案和审计动作说明已改成与当前 `RESOLVED` 实现一致，不再把它标记为“保留枚举未启用”。
+  - `support RESOLVED` 本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已补齐客服输入提效：`/admin/support` 新增快捷回复模板与常用标签建议，`/support` 用户侧新增问题发起模板，减少客服与用户的重复输入成本。
+  - 已收口客服工作台内容配置：support 新增 `supportIntakeConfig/supportWorkspaceConfig/adminUpsertSupportWorkspaceConfig`，用户侧问题模板、客服快捷回复与常用标签现统一由 backend 下发并可在 `/admin/support` 直接维护，不再写死在前端常量里。
+  - 客服输入提效本轮验证通过：`pnpm --dir frontend build`。
+  - 已补齐客服时间线筛选与导出：`supportConversationAuditLogs` 新增 `actor/action` 过滤，`/admin/support` 的 Activity 面板支持按人/动作筛选并导出 CSV，方便交接复盘和运营抽查。
+  - 客服时间线筛选与导出本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已补齐客服会话操作审计：新增 `support_conversation_audit:{auditId}` 记录与 `supportConversationAuditLogs` 查询，用户消息、客服回复、自动/人工改派、内部备注、triage、关闭和重开都会写入时间线，`/admin/support` 详情页已可直接查看。
+  - 客服会话操作审计本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已补齐客服会话 triage：`supportConversationQueue/adminSupportConversations` 新增 `priority` 过滤，workspace meta 新增 `priority/tags/slaDueAt/slaStatus`，`/admin/support` 现可设置优先级、标签并在队列中直接看到 SLA 预警。
+  - 客服 triage 本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已补齐客服工作台内部备注与关闭原因：新增独立 `support_conversation_meta:{conversationId}` 记录，客服/管理员可写共享内部备注，管理员关闭会话时可写 `closeReason/closedBy/closedAt`，且会话重开时自动清理旧关闭上下文。
+  - 客服内部备注与关闭原因本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已补齐客服工作台未读筛选：`supportConversationQueue/adminSupportConversations` 新增按 `hasUnreadForAgents/hasUnreadForUser` 过滤，`/admin/support` 同步增加快捷筛选和未读计数展示，方便快速定位待处理会话。
+  - 客服未读筛选本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已收口客服工作台入口权限：`currentUser` 现返回 `is_support_agent`，前端导航与 `/admin/support` 路由改为仅对 `ADMIN` 或 `SUPPORT_AGENT` 暴露，普通登录用户不再看到或进入客服工作台。
+  - 客服入口权限收口本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/auth.service.spec.ts auth/admin-access.service.spec.ts support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已完成后端角色模型统一：新增 `RoleAccessService`，`ADMIN` 与 `SUPPORT_AGENT` 授权记录统一写入 `role_access:{role}:{recordId}`；客服在线/最近分配等运行态拆分到 `support_agent_state:{userId}`，并对历史 `admin_access:*` / `support_agent:*` 保留只读兼容。
+  - 后端角色模型统一本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts auth/admin-access.service.spec.ts`、`pnpm --dir frontend build`。
+  - 已统一运营账号授权入口：`/admin/access` 现同时管理 `ADMIN` 与 `SUPPORT_AGENT` 两类角色；`/admin/support` 收口为客服队列与现场操作页，不再重复承载账号授予表单。
+  - 已补齐 `support agent` 授权审计字段：客服账号配置新增 `note/grantedBy/updatedBy`，支持追踪谁开通/停用了客服账号，以及授予背景说明。
+  - 角色配置收口本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- support/support.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts auth/admin-access.service.spec.ts`、`pnpm --dir frontend build`。
+  - 已新增可运营的管理员账号入口：后端新增 `adminAccessEntries/adminSetAccess` 与 `AdminAccessService`，前端新增 `/admin/access` 页面；管理员名单现支持写入 `travel_kv` 持久化维护，`ADMIN_USER_IDS/ADMIN_USER_EMAILS` 退化为 bootstrap 只读来源。
+  - admin 账号配置本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend test -- auth/admin-access.service.spec.ts payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts`、`pnpm --dir frontend build`。
+  - 已收口 admin 权限模型：后端新增基于登录态的 `AdminGuard` 与 `currentUser.is_admin`，前端 admin 页面/路由/导航改为读取 backend 当前用户权限；浏览器端已移除 `VITE_BACKEND_ADMIN_AUTH_CODE` 依赖，仅保留 backend `ADMIN_AUTH_CODE` 作为 callback/sync/脚本入口兜底，同时 `adminUpdatePaymentStatus` 的审计 actor 已改为真实 admin 用户标识。
+  - admin 权限模型本轮验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir frontend build`、`pnpm --dir backend test -- payment/payment.entry.spec.ts order/order-payment-flow.entry.spec.ts support/support.service.spec.ts`。
+  - 已补强客服闭环细节：`/support` 首次仅打开页面不再持久化空会话，避免污染客服队列；同时补齐用户/客服查看详情时的 `unread` 清零逻辑，并修正 admin support 页在非客服账号下的“Assigned to me”筛选表现。
+  - 已落地 `support` 客服模块与前端聊天闭环：新增后端 `support` GraphQL 模块（用户会话、客服回复、客服激活、管理员分配/关闭会话），前端 `/support` 用户聊天页与 `/admin/support` 客服工作台，支持“一用户一会话、客服共享历史、用户仅看自己、激活客服自动分配待处理会话”。
+  - 客服闭环本轮验证通过：`pnpm --dir backend test -- support/support.service.spec.ts`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir frontend build`。
+  - 已更新 `docs/crypto-travel-cn-design.md` 的简单客服模式设计，补齐“注册用户可聊、管理员分配客服账号、客服激活后自动分配、客服侧共享历史、用户侧仅看自己”的前端路由、后端模块、GraphQL、KV 与状态流转方案。
   - 已完成 `docs/crypto-travel-cn-design.md` 与当前前后端实现的差距复核，确认剩余缺口主要集中在：服务详情/分类路由、用户资料与通知模块、容量/排班模型、订单全状态流转与管理端订单视图。
   - 后端已接入 `catalog + booking + payment` 三个 GraphQL 模块骨架，并在 `app.module.ts` 完成注册。
   - `catalog` 已切换到 `travel_kv` 持久化，支持服务列表筛选、分页和服务详情 Union。
@@ -109,17 +158,24 @@
   - 已补齐排班日期过滤：`adminServiceResourceSchedule` 新增可选 `date` 参数，前端排班面板支持按日筛选并在刷新/改派后保留当前日期视图；同时补充 `booking.service.spec.ts` 的日期过滤回归。
   - 资源运营视图增强本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
 - 进行中：
-  - 继续把当前 MVP 能力从“功能闭环完整”提升到“运营精细化”，重点是 admin 权限模型与更强的资源排班运营视图。
+  - 继续把当前 MVP 能力从“功能闭环完整”提升到“运营精细化”，重点是更强的资源排班运营视图、客服工作台增强，以及真实链上支付联调。
+  - 开始进入一轮质量加固：优先处理 review 暴露出的联调可用性、客服状态一致性和数据规模/并发边界问题。
 - 下一步：
+  - 评估是否为 frontend 再补 `/graphql` dev proxy 兜底，让本地开发既支持 CORS 直连也支持同源代理。
+  - 继续补齐设计文档中仍偏“草案”的主 GraphQL 示例，把已落地的 `order/user/notification/assistant admin` 接口整理成更完整的 schema 附录。
   - 为 `user/profile`、`notification`、`admin orders`、`capacity/time slot` 增补后端单测与端到端回归。
   - 将当前排班面板继续演进为更完整的日历视图，并补齐 URL 可分享的筛选状态。
   - 配置并联调真实 USDT 收款环境参数（RPC/Token/BatchCall/MasterKey），完成链上订单创建与对账验证。
-  - 收口 admin 权限模型，避免当前仅依赖 `admin_auth_code` 的粗粒度运营入口。
+  - 在统一 `role_access` 模型基础上继续补细粒度权限、角色变更审计查询，以及后续移除 legacy 兼容读取所需的迁移脚本。
 
 ## Blockers
-- 暂无硬阻塞。
+- 当前无构建级硬阻塞。
+- 剩余需要优先消化的质量风险主要是：如果后续 support 继续新增按标签/SLA 等元数据维度的重筛选，最好继续沿现在的投影方案把更多派生字段前置到 conversation record；另外若要上多实例部署，支付创建还可以再补一层跨进程/跨实例的分布式幂等保护。
 
 ## Change Log
+- 2026-03-14: 收口客服工作台内容配置，新增 `supportIntakeConfig/supportWorkspaceConfig/adminUpsertSupportWorkspaceConfig`；`/support` 与 `/admin/support` 不再依赖前端硬编码模板/标签，管理员可直接在 support workspace 内维护客服话术与标签建议，并重新验证 `backend lint/build/test` 与 `frontend build` 通过。
+- 2026-03-14: frontend 新增 `/graphql` dev proxy，GraphQL 客户端默认切回同源 `/graphql`，并在 `frontend/.env.example` 增加 `VITE_BACKEND_DEV_PROXY_TARGET`，本地联调无需再手工写死 `http://localhost:3000/graphql`。
+- 2026-03-14: 收口 `createUsdtPayment` 并发幂等，改为 booking 级稳定 `paymentId` + 服务内串行化创建；同时将 `supportConversationAuditLogs` 与 support 队列（含 `priority/unassignedOnly`）切到真实 DB 分页，并通过一次性投影 backfill 兼容老数据，补充并发/过期/分页回归测试，再次验证 `frontend build`、`backend build`、backend ESLint、backend Jest 全通过。
 - 2026-03-03: 初始化进度看板；记录当前方案与下一步开发计划。
 - 2026-03-03: 根据评审意见重构 `docs/crypto-travel-cn-design.md`，去除手动索引方案并补齐 auth/分页/管理端与支付细节。
 - 2026-03-03: 支付方案进一步简化为“全局固定 USDT 计价”，移除汇率/锁价/幂等参数/链与合约校验文档设计。
@@ -182,4 +238,21 @@
 - 2026-03-13: 新增资源运营跨页闭环：`adminOrders` 支持 `serviceId/bookingId` 过滤，`/admin/services` 排班面板中的 booking 可直接跳转到订单运营页，并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 验证。
 - 2026-03-13: 新增排班面板内直接改派：`/admin/services` 可直接加载 booking 的可改派资源并提交改派，减少在 `/admin/services` 与 `/admin/orders` 之间来回切换，并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 验证。
 - 2026-03-13: 新增排班面板待处理队列：`/admin/services` 统一展示冲突 booking 与未指派 booking，并直接复用改派动作；同时补充 `booking.service.spec.ts` 冲突时段回归，验证 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand` 通过。
- - 2026-03-13: 增强资源运营视图：新增 `Dispatch Timeline`、`Date Load` 日期负载卡片和 `adminServiceResourceSchedule(date)` 日期过滤，前端排班面板支持按日查看并保留当前筛选回刷；同时补充 `booking.service.spec.ts` 日期过滤回归并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand`。
+- 2026-03-13: 增强资源运营视图：新增 `Dispatch Timeline`、`Date Load` 日期负载卡片和 `adminServiceResourceSchedule(date)` 日期过滤，前端排班面板支持按日查看并保留当前筛选回刷；同时补充 `booking.service.spec.ts` 日期过滤回归并通过 `frontend build`、`backend lint`、`backend build`、`backend jest --runInBand`。
+- 2026-03-14: 更新 `docs/crypto-travel-cn-design.md`，补充简单客服模式设计，包括客服账号分配/激活、自动分配规则、共享客服历史与用户隔离访问约束。
+- 2026-03-14: 落地简单客服模式第一版：新增 `backend/src/support` 模块与 `frontend /support + /admin/support` 页面，打通用户发消息、客服激活/回复、管理员分配账号/改派/关闭会话，并通过 `backend test/lint/build` 与 `frontend build` 验证。
+- 2026-03-14: 补强客服模式细节：改为“首次发消息再落会话”，避免空会话进入队列；同时补齐 unread 清零与 admin support 非客服账号筛选表现，并重新通过 `backend test/lint/build` 与 `frontend build` 验证。
+- 2026-03-14: 新增管理员账号配置闭环：后端落地 `adminAccessEntries/adminSetAccess + AdminAccessService`，前端新增 `/admin/access`，管理员名单支持 DB 持久化维护并保留 env bootstrap 只读入口；同时回归通过 `backend lint/build/test`。
+- 2026-03-14: 收口运营账号配置入口：`/admin/access` 现同时管理 admin 与 support agent 角色，`/admin/support` 改为只保留队列与现场操作；同时为 support agent 配置新增 `note/grantedBy/updatedBy` 审计字段，并通过 `backend lint/build/test` 与 `frontend build` 验证。
+- 2026-03-14: 完成后端角色模型统一：新增 `RoleAccessService`，`ADMIN/SUPPORT_AGENT` 授权记录统一改写到 `role_access:*`，客服运行态拆分为 `support_agent_state:*`，同时保留历史 `admin_access:*` / `support_agent:*` 只读兼容，并重新通过 `backend lint/build/test` 与 `frontend build` 验证。
+- 2026-03-14: 收口客服工作台入口权限：`currentUser` 新增 `is_support_agent`，前端导航与 `/admin/support` 路由改为仅对 admin/support agent 暴露，并补充 `auth.service.spec.ts` 后再次通过 `backend lint/build/test` 与 `frontend build` 验证。
+- 2026-03-14: 补齐客服工作台未读筛选：后端 `SupportConversationListInput` 与查询过滤支持 `hasUnreadForAgents/hasUnreadForUser`，前端 `/admin/support` 增加快捷筛选与未读 tag 展示，并通过 `backend lint/build/test` 与 `frontend build` 验证。
+- 2026-03-14: 补齐客服工作台内部备注与关闭原因：新增 `support_conversation_meta:*` 独立记录、workspace meta 查询/写入、管理员关闭原因录入，并在会话重开时自动清理旧关闭上下文；验证 `backend lint/build/test` 与 `frontend build` 通过。
+- 2026-03-14: 补齐客服会话 triage：新增 `priority` 过滤、`priority/tags/slaDueAt/slaStatus` workspace meta 字段与批量 meta 查询，`/admin/support` 支持设置优先级/标签并展示 SLA 预警；验证 `backend lint/build/test` 与 `frontend build` 通过。
+- 2026-03-14: 补齐客服会话操作审计：新增 `support_conversation_audit:*` 记录和 `supportConversationAuditLogs` 查询，`/admin/support` 可查看改派、triage、备注、关闭、重开和消息动作时间线；验证 `backend lint/build/test` 与 `frontend build` 通过。
+- 2026-03-14: 补齐客服时间线筛选与导出：`supportConversationAuditLogs` 新增 `actor/action` 过滤，`/admin/support` Activity 面板支持按人/动作筛选和导出 CSV；验证 `backend lint/build/test` 与 `frontend build` 通过。
+- 2026-03-14: 补齐客服输入提效：`/admin/support` 新增快捷回复模板与常用标签建议，`/support` 用户侧新增问题发起模板；验证 `frontend build` 通过。
+- 2026-03-14: 完成 `docs/crypto-travel-cn-design.md` 差距复核，补齐缺失路由、已实现 API 补充说明，并收口 `SupportConversation` 状态机与当前实现一致。
+- 2026-03-14: 落地 `support RESOLVED` 工作流：新增 `resolveSupportConversation` mutation、`RESOLVED` 审计动作与工作台入口，用户或客服后续再次发消息会自动重开；验证 `backend lint/build/test` 与 `frontend build` 通过。
+- 2026-03-14: 增强客服工作台筛选与恢复态展示：`REOPENED` 审计新增 `reopenedFromStatus`，`/admin/support` 新增 `Waiting Agent / Need Agent Reply / Resolved / Closed` 等快捷筛选按钮，并通过 `backend lint/build/test` 与 `frontend build` 验证。
+- 2026-03-14: 为 `/admin/support` 增加 URL query 同步：队列筛选、分页位置、选中会话和 audit 过滤可直接分享与前进后退恢复；验证 `frontend build` 通过。

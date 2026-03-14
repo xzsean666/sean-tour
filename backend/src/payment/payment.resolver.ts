@@ -1,6 +1,7 @@
 import { UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthGuard, CheckAdmin, CurrentUser } from '../auth/auth.guard.service';
+import { buildAdminActor } from '../auth/admin-access.util';
+import { AdminGuard, AuthGuard, CurrentUser } from '../auth/auth.guard.service';
 import { CreateUsdtPaymentInput } from './dto/create-usdt-payment.input';
 import { PaymentEventListInput } from './dto/payment-event-list.input';
 import { PaymentEventPage } from './dto/payment-event-page.dto';
@@ -38,19 +39,20 @@ export class PaymentResolver {
   }
 
   @Mutation(() => PaymentIntent)
+  @UseGuards(AdminGuard)
   async adminUpdatePaymentStatus(
-    @CheckAdmin() _: boolean,
+    @CurrentUser() user: Record<string, unknown> | undefined,
     @Args('input') input: UpdatePaymentStatusInput,
   ): Promise<PaymentIntent> {
     return this.paymentService.updatePaymentStatus(input, {
       source: PaymentEventSource.ADMIN,
-      actor: 'admin_auth_code',
+      actor: buildAdminActor(user),
     });
   }
 
   @Query(() => PaymentEventPage)
+  @UseGuards(AdminGuard)
   async adminPaymentEvents(
-    @CheckAdmin() _: boolean,
     @Args('input', { nullable: true }) input?: PaymentEventListInput,
   ): Promise<PaymentEventPage> {
     return this.paymentService.adminListPaymentEvents(input);

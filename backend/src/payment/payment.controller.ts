@@ -1,5 +1,5 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { CheckAdmin } from '../auth/auth.guard.service';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { AdminGuard } from '../auth/auth.guard.service';
 import { PaymentEventSource } from './dto/payment-event-source.enum';
 import { PaymentIntent } from './dto/payment-intent.dto';
 import { UpdatePaymentStatusInput } from './dto/update-payment-status.input';
@@ -10,8 +10,8 @@ export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
   @Post('callback/usdt')
+  @UseGuards(AdminGuard)
   async receiveUsdtCallback(
-    @CheckAdmin() _: boolean,
     @Body() input: UpdatePaymentStatusInput,
   ): Promise<PaymentIntent> {
     return this.paymentService.updatePaymentStatus(input, {
@@ -22,8 +22,8 @@ export class PaymentController {
   }
 
   @Post('sync')
+  @UseGuards(AdminGuard)
   async syncPaymentStatus(
-    @CheckAdmin() _: boolean,
     @Body() input: UpdatePaymentStatusInput,
   ): Promise<PaymentIntent> {
     return this.paymentService.updatePaymentStatus(input, {

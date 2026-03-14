@@ -13,6 +13,7 @@ import {
   type PaymentEventSource,
   type PaymentStatus,
 } from "../api/adminPaymentService";
+import { useAuthStore } from "../stores/auth.store";
 
 const PAYMENT_SOURCES: PaymentEventSource[] = ["ADMIN", "CALLBACK", "SYNC"];
 const PAYMENT_STATUSES: PaymentStatus[] = [
@@ -56,8 +57,9 @@ const actionForm = reactive({
   confirmations: "",
   eventId: "",
 });
+const { backendUser } = useAuthStore();
 
-const adminConfigured = computed(() => adminPaymentService.isAdminConfigured());
+const hasAdminAccess = computed(() => !!backendUser.value?.isAdmin);
 
 function normalizeOptionalText(value: string): string | undefined {
   const trimmed = value.trim();
@@ -99,7 +101,7 @@ async function loadEvents(): Promise<void> {
 }
 
 async function loadEventsAtOffset(nextOffset: number): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     events.value = [];
     total.value = 0;
     offset.value = 0;
@@ -141,7 +143,7 @@ function escapeCsv(value: string): string {
 }
 
 async function exportCsv(): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     return;
   }
 
@@ -238,10 +240,8 @@ async function submitManualUpdate(): Promise<void> {
   successMessage.value = "";
 
   try {
-    if (!adminConfigured.value) {
-      throw new Error(
-        "VITE_BACKEND_ADMIN_AUTH_CODE is not configured in frontend/.env.",
-      );
+    if (!hasAdminAccess.value) {
+      throw new Error("This account does not have admin access.");
     }
 
     const confirmationsText = normalizeOptionalText(actionForm.confirmations);
@@ -338,9 +338,8 @@ onMounted(async () => {
     </p>
   </section>
 
-  <Message v-if="!adminConfigured" severity="warn" class="mt-4">
-    Missing <code>VITE_BACKEND_ADMIN_AUTH_CODE</code>. Admin actions will fail
-    until it is configured.
+  <Message v-if="!hasAdminAccess" severity="warn" class="mt-4">
+    This account does not have admin access.
   </Message>
   <Message v-if="errorMessage" severity="error" class="mt-4">{{
     errorMessage
@@ -402,7 +401,7 @@ onMounted(async () => {
             <InputText
               v-model="filters.actor"
               class="w-full"
-              placeholder="admin_auth_code / callback_webhook / sync_job"
+              placeholder="admin:<userId> / callback_webhook / sync_job"
             />
           </label>
 

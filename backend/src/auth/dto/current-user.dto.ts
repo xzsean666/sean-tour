@@ -13,4 +13,10 @@ export class CurrentUserDto {
 
   @Field({ nullable: true })
   email?: string;
+
+  @Field()
+  is_admin: boolean;
+
+  @Field()
+  is_support_agent: boolean;
 }

@@ -1,10 +1,11 @@
 import { createHmac } from 'crypto';
-import { Module, type INestApplication } from '@nestjs/common';
+import { Global, Module, type INestApplication } from '@nestjs/common';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { GraphQLModule } from '@nestjs/graphql';
 import { Test } from '@nestjs/testing';
 import type { Request, Response } from 'express';
 import request from 'supertest';
+import { AuthModule } from '../auth/auth.module';
 import { BookingService } from '../booking/booking.service';
 import { DBService, type PGKVDatabase } from '../common/db.service';
 import { config } from '../config';
@@ -16,7 +17,14 @@ import { PaymentService } from './payment.service';
 
 jest.mock('../helpers/sdk', () => ({
   JWTHelper: class JWTHelper {
-    verifyToken() {
+    verifyToken(token?: string) {
+      if (token === 'admin-user-token') {
+        return {
+          user_id: 'admin_user_1',
+          email: 'admin@example.com',
+        };
+      }
+
       return { user_id: 'test_user' };
     }
   },
@@ -214,8 +222,17 @@ function signCallbackInput(
   return createHmac('sha256', callbackSecret).update(payload).digest('hex');
 }
 
+@Global()
+@Module({
+  providers: [DBService],
+  exports: [DBService],
+})
+class TestGlobalModule {}
+
 @Module({
   imports: [
+    TestGlobalModule,
+    AuthModule,
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       autoSchemaFile: true,
@@ -226,12 +243,13 @@ function signCallbackInput(
     }),
   ],
   controllers: [PaymentController],
-  providers: [PaymentResolver, PaymentService, BookingService, DBService],
+  providers: [PaymentResolver, PaymentService, BookingService],
 })
 class PaymentEntryTestModule {}
 
 describe('Payment entry integration (GraphQL + REST)', () => {
   const originalAdminAuthCode = config.auth.ADMIN_AUTH_CODE;
+  const originalAdminUserIds = config.auth.ADMIN_USER_IDS;
   const originalCallbackSecret = config.payment.CALLBACK_SECRET;
   const originalReplayCooldown = config.payment.REPLAY_COOLDOWN_SECONDS;
 
@@ -251,6 +269,7 @@ describe('Payment entry integration (GraphQL + REST)', () => {
 
   beforeAll(async () => {
     config.auth.ADMIN_AUTH_CODE = adminAuthCode;
+    config.auth.ADMIN_USER_IDS = '';
     config.payment.CALLBACK_SECRET = callbackSecret;
     config.payment.REPLAY_COOLDOWN_SECONDS = 0;
 
@@ -269,6 +288,22 @@ describe('Payment entry integration (GraphQL + REST)', () => {
 
   beforeEach(() => {
     store.clear();
+    store.set('admin_access:user:admin_user_1', {
+      value: {
+        entityType: 'ADMIN_ACCESS',
+        id: 'user:admin_user_1',
+        principalType: 'USER_ID',
+        principalValue: 'admin_user_1',
+        userId: 'admin_user_1',
+        enabled: true,
+        grantedBy: 'admin_auth_code',
+        updatedBy: 'admin_auth_code',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
     store.set('payment:pay_gql_1', {
       value: buildPaymentRecord({
         id: 'pay_gql_1',
@@ -291,6 +326,7 @@ describe('Payment entry integration (GraphQL + REST)', () => {
 
   afterAll(async () => {
     config.auth.ADMIN_AUTH_CODE = originalAdminAuthCode;
+    config.auth.ADMIN_USER_IDS = originalAdminUserIds;
     config.payment.CALLBACK_SECRET = originalCallbackSecret;
     config.payment.REPLAY_COOLDOWN_SECONDS = originalReplayCooldown;
     await app.close();
@@ -301,7 +337,7 @@ describe('Payment entry integration (GraphQL + REST)', () => {
 
     const updateResponse = await request(server)
       .post('/graphql')
-      .set('admin_auth_code', adminAuthCode)
+      .set('Authorization', 'Bearer admin-user-token')
       .send({
         query: `
           mutation UpdatePayment($input: UpdatePaymentStatusInput!) {
@@ -336,7 +372,7 @@ describe('Payment entry integration (GraphQL + REST)', () => {
 
     const queryResponse = await request(server)
       .post('/graphql')
-      .set('admin_auth_code', adminAuthCode)
+      .set('Authorization', 'Bearer admin-user-token')
       .send({
         query: `
           query Events($input: PaymentEventListInput) {
@@ -365,11 +401,52 @@ describe('Payment entry integration (GraphQL + REST)', () => {
     expect(queryBody.data?.adminPaymentEvents?.items[0]?.status).toBe('PAID');
   });
 
-  it('rejects GraphQL admin mutation without admin auth code', async () => {
+  it('allows GraphQL admin mutation with bearer token for configured admin user', async () => {
     const server = getHttpServer(app);
 
     const response = await request(server)
       .post('/graphql')
+      .set('Authorization', 'Bearer admin-user-token')
+      .send({
+        query: `
+          mutation UpdatePayment($input: UpdatePaymentStatusInput!) {
+            adminUpdatePaymentStatus(input: $input) {
+              id
+              bookingId
+              status
+            }
+          }
+        `,
+        variables: {
+          input: {
+            paymentId: 'pay_gql_1',
+            status: 'PAID',
+            paidAmount: '100.00',
+            confirmations: 9,
+            eventId: 'evt_gql_admin_token',
+          },
+        },
+      });
+
+    const body = response.body as GraphQLUpdatePaymentResponse;
+    expect(response.status).toBe(200);
+    expect(body.errors).toBeUndefined();
+    expect(body.data?.adminUpdatePaymentStatus?.status).toBe('PAID');
+    expect(
+      (
+        store.get('payment_event:evt_gql_admin_token')?.value as
+          | { actor?: string }
+          | undefined
+      )?.actor,
+    ).toBe('admin:admin_user_1');
+  });
+
+  it('rejects GraphQL admin mutation when only admin auth code is provided', async () => {
+    const server = getHttpServer(app);
+
+    const response = await request(server)
+      .post('/graphql')
+      .set('admin_auth_code', adminAuthCode)
       .send({
         query: `
           mutation UpdatePayment($input: UpdatePaymentStatusInput!) {
@@ -429,7 +506,7 @@ describe('Payment entry integration (GraphQL + REST)', () => {
 
     const queryResponse = await request(server)
       .post('/graphql')
-      .set('admin_auth_code', adminAuthCode)
+      .set('Authorization', 'Bearer admin-user-token')
       .send({
         query: `
           query Events($input: PaymentEventListInput) {

@@ -10,6 +10,7 @@ This checklist is for a quick pre-release manual validation of the MVP flow:
      - `JWT_SECRET`
      - `SUPABASE_URL`
      - `SUPABASE_ANON_KEY`
+     - `ADMIN_USER_EMAILS` or `ADMIN_USER_IDS` (at least one bootstrap admin for first-time `/admin/access` setup)
      - `ADMIN_AUTH_CODE`
      - `PAYMENT_CALLBACK_SECRET`
 2. Frontend env configured:
@@ -17,7 +18,6 @@ This checklist is for a quick pre-release manual validation of the MVP flow:
      - `VITE_SUPABASE_URL`
      - `VITE_SUPABASE_ANON_KEY`
      - `VITE_BACKEND_GRAPHQL_URL=http://localhost:3000/graphql`
-     - `VITE_BACKEND_ADMIN_AUTH_CODE` (same value as backend `ADMIN_AUTH_CODE`)
 
 ## 2. Start Services
 
@@ -30,6 +30,7 @@ pnpm --dir frontend dev
 
 1. Open `http://localhost:5173`.
 2. Login with a valid user.
+   - If you need to verify `/admin/payments`, use an account that already has backend admin access, either from `ADMIN_USER_EMAILS/ADMIN_USER_IDS` or granted in `/admin/access`.
 3. On services page, click `Book Now` for any service.
 4. Confirm you are redirected to `/checkout/:bookingId`.
 5. Record:
@@ -105,7 +106,7 @@ Expected response:
 
 ## 6. Verify Admin Payment Observability
 
-1. Open `/admin/payments`.
+1. Open `/admin/payments` with an account that already has backend admin access.
 2. Filter by:
    - `Event ID = $EVENT_ID`, or
    - `Actor = callback_webhook`

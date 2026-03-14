@@ -6,13 +6,16 @@ import { initAuthStore, useAuthStore } from './stores/auth.store';
 
 const router = useRouter();
 const route = useRoute();
-const { user, isReady, signOutFromAuthStore } = useAuthStore();
+const { user, backendUser, isReady, signOutFromAuthStore } = useAuthStore();
 
 const isSigningOut = ref(false);
 const supabaseConfigured = hasSupabaseConfig();
 const isAuthRoute = computed(() => route.path.startsWith('/auth/'));
 const assistantLink = computed(() =>
   user.value ? '/assistant/requests' : '/assistant',
+);
+const hasSupportWorkspaceAccess = computed(
+  () => !!backendUser.value?.isAdmin || !!backendUser.value?.isSupportAgent,
 );
 
 const primaryLinks = computed(() => {
@@ -32,10 +35,18 @@ const primaryLinks = computed(() => {
       ? [
           { to: '/orders', label: 'Orders' },
           { to: '/profile', label: 'Profile' },
-          { to: '/admin/services', label: 'Admin Services' },
-          { to: '/admin/orders', label: 'Admin Orders' },
-          { to: '/admin/payments', label: 'Admin Payments' },
-          { to: '/admin/assistant', label: 'Admin Assistant' },
+          ...(hasSupportWorkspaceAccess.value
+            ? [{ to: '/admin/support', label: 'Admin Support' }]
+            : []),
+          ...(backendUser.value?.isAdmin
+            ? [
+                { to: '/admin/access', label: 'Admin Access' },
+                { to: '/admin/services', label: 'Admin Services' },
+                { to: '/admin/orders', label: 'Admin Orders' },
+                { to: '/admin/payments', label: 'Admin Payments' },
+                { to: '/admin/assistant', label: 'Admin Assistant' },
+              ]
+            : []),
         ]
       : [
           { to: '/auth/login', label: 'Login' },

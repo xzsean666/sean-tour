@@ -17,6 +17,8 @@ type SearchJsonRow = {
   updated_at?: Date;
 };
 
+const NOTIFICATION_SEARCH_BATCH_SIZE = 200;
+
 @Injectable()
 export class NotificationService {
   private readonly travelDB: PGKVDatabase;
@@ -66,28 +68,42 @@ export class NotificationService {
       contains.type = input.type;
     }
 
-    const result = await this.travelDB.searchJson({
-      contains,
-      limit: 200,
-      order_by: 'DESC',
-      order_by_field: 'created_at',
-    });
+    if (!input?.unreadOnly) {
+      const result = await this.travelDB.searchJson({
+        contains,
+        limit,
+        offset,
+        include_total: true,
+        order_by: 'DESC',
+        order_by_field: 'created_at',
+      });
 
-    const items = (result.data as SearchJsonRow[])
-      .map((row) => this.toNotificationRecord(row.value))
-      .filter((row): row is NotificationRecord => row !== null)
-      .filter((row) => !input?.unreadOnly || !row.readAt);
+      const items = (result.data as SearchJsonRow[])
+        .map((row) => this.toNotificationRecord(row.value))
+        .filter((row): row is NotificationRecord => row !== null)
+        .map((record) => this.toNotification(record));
+      const total = result.total ?? items.length;
 
-    const pageItems = items
+      return {
+        items,
+        total,
+        limit,
+        offset,
+        hasMore: offset + items.length < total,
+      };
+    }
+
+    const unreadRecords = await this.listUnreadNotificationRecords(contains);
+    const pageItems = unreadRecords
       .slice(offset, offset + limit)
       .map((record) => this.toNotification(record));
 
     return {
       items: pageItems,
-      total: items.length,
+      total: unreadRecords.length,
       limit,
       offset,
-      hasMore: offset + pageItems.length < items.length,
+      hasMore: offset + pageItems.length < unreadRecords.length,
     };
   }
 
@@ -116,14 +132,24 @@ export class NotificationService {
   }
 
   async exportNotificationsByUser(userId: string): Promise<Notification[]> {
-    const page = await this.listMyNotifications(userId, {
-      page: {
-        limit: 500,
-        offset: 0,
-      },
-    });
+    const exported: Notification[] = [];
+    let offset = 0;
 
-    return page.items;
+    while (true) {
+      const page = await this.listMyNotifications(userId, {
+        page: {
+          limit: 100,
+          offset,
+        },
+      });
+      exported.push(...page.items);
+
+      if (!page.hasMore) {
+        return exported;
+      }
+
+      offset += page.items.length;
+    }
   }
 
   async deleteNotificationsByUser(userId: string): Promise<number> {
@@ -159,6 +185,34 @@ export class NotificationService {
     }
 
     return record;
+  }
+
+  private async listUnreadNotificationRecords(
+    contains: Record<string, unknown>,
+  ): Promise<NotificationRecord[]> {
+    const unreadRecords: NotificationRecord[] = [];
+    let offset = 0;
+
+    while (true) {
+      const result = await this.travelDB.searchJson({
+        contains,
+        limit: NOTIFICATION_SEARCH_BATCH_SIZE,
+        offset,
+        order_by: 'DESC',
+        order_by_field: 'created_at',
+      });
+      const batch = (result.data as SearchJsonRow[])
+        .map((row) => this.toNotificationRecord(row.value))
+        .filter((row): row is NotificationRecord => row !== null);
+
+      unreadRecords.push(...batch.filter((row) => !row.readAt));
+
+      if (batch.length < NOTIFICATION_SEARCH_BATCH_SIZE) {
+        return unreadRecords;
+      }
+
+      offset += batch.length;
+    }
   }
 
   private toNotificationRecord(value: unknown): NotificationRecord | null {

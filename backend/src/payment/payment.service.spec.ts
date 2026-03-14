@@ -175,7 +175,7 @@ describe('PaymentService', () => {
     const walletServiceMock: Partial<PaymentWalletService> = {
       allocateAddressForPayment: jest.fn().mockResolvedValue({
         payAddress: '0x1111222233334444555566667777888899990000',
-        expiredAt: '2026-03-05T12:00:00.000Z',
+        expiredAt: '2099-03-05T12:00:00.000Z',
         walletOrderHash: 'order_hash_1',
         walletIndex: 7,
       }),
@@ -197,8 +197,131 @@ describe('PaymentService', () => {
     expect(result.payAddress).toBe(
       '0x1111222233334444555566667777888899990000',
     );
-    expect(result.expiredAt).toBe('2026-03-05T12:00:00.000Z');
+    expect(result.expiredAt).toBe('2099-03-05T12:00:00.000Z');
     expect(result.expectedAmount).toBe('798.00');
+  });
+
+  it('reuses the same payment intent for concurrent create requests', async () => {
+    const { db, store } = createInMemoryTravelDB();
+
+    const bookingServiceMock: Partial<BookingService> = {
+      getBookingByIdForUser: jest.fn().mockResolvedValue({
+        id: 'bk_concurrent_1',
+        userId: 'user_concurrent_1',
+        serviceId: 'svc_pkg_beijing_001',
+        serviceType: ServiceType.PACKAGE,
+        startDate: '2026-06-01',
+        endDate: '2026-06-03',
+        travelerCount: 1,
+        status: BookingStatus.PENDING_PAYMENT,
+        serviceSnapshot: {
+          title: 'Beijing 3-Day Culture Explorer',
+          city: 'Beijing',
+          basePrice: {
+            amount: 399,
+            currency: 'USDT',
+          },
+        },
+      }),
+    };
+    const dbServiceMock: Partial<DBService> = {
+      getDBInstance: jest.fn().mockReturnValue(db),
+    };
+    const walletServiceMock: Partial<PaymentWalletService> = {
+      allocateAddressForPayment: jest.fn().mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          payAddress: '0x2222333344445555666677778888999900001111',
+          expiredAt: '2099-03-06T12:00:00.000Z',
+          walletOrderHash: 'order_hash_concurrent',
+          walletIndex: 9,
+        };
+      }),
+    };
+
+    const service = new PaymentService(
+      bookingServiceMock as BookingService,
+      dbServiceMock as DBService,
+      walletServiceMock as PaymentWalletService,
+    );
+
+    const [first, second] = await Promise.all([
+      service.createUsdtPayment('user_concurrent_1', {
+        bookingId: 'bk_concurrent_1',
+      }),
+      service.createUsdtPayment('user_concurrent_1', {
+        bookingId: 'bk_concurrent_1',
+      }),
+    ]);
+
+    expect(walletServiceMock.allocateAddressForPayment).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(first.id).toBe('pay_bk_concurrent_1');
+    expect(second.id).toBe('pay_bk_concurrent_1');
+    expect(first.payAddress).toBe(second.payAddress);
+    expect(store.has('payment:pay_bk_concurrent_1')).toBe(true);
+  });
+
+  it('returns the existing expired payment instead of creating a new one', async () => {
+    const expiredAt = new Date(Date.now() - 60 * 1000).toISOString();
+    const { db, store } = createInMemoryTravelDB({
+      'payment:pay_bk_retry_1': {
+        ...paymentRecord,
+        id: 'pay_bk_retry_1',
+        bookingId: 'bk_retry_1',
+        userId: 'user_retry_1',
+        expiredAt,
+      },
+    });
+
+    const bookingServiceMock: Partial<BookingService> = {
+      getBookingByIdForUser: jest.fn().mockResolvedValue({
+        id: 'bk_retry_1',
+        userId: 'user_retry_1',
+        serviceId: 'svc_pkg_beijing_001',
+        serviceType: ServiceType.PACKAGE,
+        startDate: '2026-06-01',
+        endDate: '2026-06-03',
+        travelerCount: 1,
+        status: BookingStatus.PENDING_PAYMENT,
+        serviceSnapshot: {
+          title: 'Beijing 3-Day Culture Explorer',
+          city: 'Beijing',
+          basePrice: {
+            amount: 399,
+            currency: 'USDT',
+          },
+        },
+      }),
+      expireBookingById: jest.fn().mockResolvedValue(null),
+    };
+    const dbServiceMock: Partial<DBService> = {
+      getDBInstance: jest.fn().mockReturnValue(db),
+    };
+    const walletServiceMock: Partial<PaymentWalletService> = {
+      allocateAddressForPayment: jest.fn(),
+    };
+
+    const service = new PaymentService(
+      bookingServiceMock as BookingService,
+      dbServiceMock as DBService,
+      walletServiceMock as PaymentWalletService,
+    );
+
+    const result = await service.createUsdtPayment('user_retry_1', {
+      bookingId: 'bk_retry_1',
+    });
+
+    expect(result.id).toBe('pay_bk_retry_1');
+    expect(result.status).toBe(PaymentStatus.EXPIRED);
+    expect(walletServiceMock.allocateAddressForPayment).not.toHaveBeenCalled();
+    expect(bookingServiceMock.expireBookingById).toHaveBeenCalledWith(
+      'bk_retry_1',
+    );
+    expect(
+      (store.get('payment:pay_bk_retry_1') as { status: PaymentStatus }).status,
+    ).toBe(PaymentStatus.EXPIRED);
   });
 
   it('rejects callback update when signature is invalid', async () => {

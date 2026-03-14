@@ -283,20 +283,6 @@ function parseServiceItem(item: ServiceItemGraphQL): AdminServiceItem {
   };
 }
 
-function getAdminAuthCodeOrThrow(): string {
-  const adminAuthCode = (
-    import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || ""
-  ).trim();
-
-  if (!adminAuthCode) {
-    throw new Error(
-      "VITE_BACKEND_ADMIN_AUTH_CODE is required for admin operations.",
-    );
-  }
-
-  return adminAuthCode;
-}
-
 function toAdminServiceDetail(
   payload: ServiceDetailGraphQL["serviceDetail"],
 ): AdminServiceDetail {
@@ -334,10 +320,6 @@ function toAdminServiceDetail(
 }
 
 export const adminCatalogService = {
-  isAdminConfigured(): boolean {
-    return !!(import.meta.env.VITE_BACKEND_ADMIN_AUTH_CODE || "").trim();
-  },
-
   async listServices(params?: { limit?: number; offset?: number }): Promise<{
     items: AdminServiceItem[];
     total: number;
@@ -428,8 +410,6 @@ export const adminCatalogService = {
   },
 
   async upsertService(input: AdminUpsertServiceInput): Promise<AdminServiceItem> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminUpsertServiceGraphQL>({
       query: `
         mutation AdminUpsertService($input: UpsertServiceInput!) {
@@ -441,9 +421,6 @@ export const adminCatalogService = {
       variables: {
         input,
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return parseServiceItem(data.adminUpsertService);
@@ -453,7 +430,6 @@ export const adminCatalogService = {
     id: string;
     status: string;
   }): Promise<AdminServiceItem> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
     const data = await requestBackendGraphQL<AdminSetServiceStatusGraphQL>({
       query: `
         mutation AdminSetServiceStatus($input: SetServiceStatusInput!) {
@@ -463,9 +439,6 @@ export const adminCatalogService = {
         }
       `,
       variables: { input },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return parseServiceItem(data.adminSetServiceStatus);
@@ -475,7 +448,6 @@ export const adminCatalogService = {
     id: string;
     hardDelete?: boolean;
   }): Promise<boolean> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
     const data = await requestBackendGraphQL<AdminDeleteServiceGraphQL>({
       query: `
         mutation AdminDeleteService($input: DeleteServiceInput!) {
@@ -487,9 +459,6 @@ export const adminCatalogService = {
           id: input.id,
           hardDelete: !!input.hardDelete,
         },
-      },
-      headers: {
-        admin_auth_code: adminAuthCode,
       },
     });
 
@@ -508,7 +477,6 @@ export const adminCatalogService = {
     offset: number;
     hasMore: boolean;
   }> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
     const limit = Math.min(Math.max(params?.limit ?? 20, 1), 100);
     const offset = Math.max(params?.offset ?? 0, 0);
 
@@ -540,9 +508,6 @@ export const adminCatalogService = {
           page: { limit, offset },
         },
       },
-      headers: {
-        admin_auth_code: adminAuthCode,
-      },
     });
 
     return {
@@ -558,8 +523,6 @@ export const adminCatalogService = {
     serviceId: string,
     date?: string,
   ): Promise<AdminServiceResourceSchedule> {
-    const adminAuthCode = getAdminAuthCodeOrThrow();
-
     const data = await requestBackendGraphQL<AdminServiceResourceScheduleGraphQL>({
       query: `
         query AdminServiceResourceSchedule($serviceId: String!, $date: String) {
@@ -603,9 +566,6 @@ export const adminCatalogService = {
       variables: {
         serviceId,
         ...(date ? { date } : {}),
-      },
-      headers: {
-        admin_auth_code: adminAuthCode,
       },
     });
 

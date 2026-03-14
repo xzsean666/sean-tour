@@ -5,7 +5,7 @@ import {
 } from "./sessionExpiry";
 
 const backendGraphqlUrl =
-  import.meta.env.VITE_BACKEND_GRAPHQL_URL || "http://localhost:3000/graphql";
+  import.meta.env.VITE_BACKEND_GRAPHQL_URL || "/graphql";
 
 type GraphQLErrorItem = {
   message?: string;

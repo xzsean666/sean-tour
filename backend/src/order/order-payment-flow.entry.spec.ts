@@ -240,10 +240,12 @@ class OrderPaymentFlowEntryTestModule {}
 
 describe('Order/payment flow integration', () => {
   const originalAdminAuthCode = config.auth.ADMIN_AUTH_CODE;
+  const originalAdminUserIds = config.auth.ADMIN_USER_IDS;
   const originalCallbackSecret = config.payment.CALLBACK_SECRET;
   const originalReplayCooldown = config.payment.REPLAY_COOLDOWN_SECONDS;
 
   const adminAuthCode = 'test-admin-auth-code';
+  const adminUserToken = 'admin_flow_9001';
   const callbackSecret = 'test-callback-secret';
   const userToken = 'user_flow_1001';
 
@@ -257,6 +259,7 @@ describe('Order/payment flow integration', () => {
 
   beforeAll(async () => {
     config.auth.ADMIN_AUTH_CODE = adminAuthCode;
+    config.auth.ADMIN_USER_IDS = adminUserToken;
     config.payment.CALLBACK_SECRET = callbackSecret;
     config.payment.REPLAY_COOLDOWN_SECONDS = 0;
 
@@ -273,6 +276,7 @@ describe('Order/payment flow integration', () => {
 
   afterAll(async () => {
     config.auth.ADMIN_AUTH_CODE = originalAdminAuthCode;
+    config.auth.ADMIN_USER_IDS = originalAdminUserIds;
     config.payment.CALLBACK_SECRET = originalCallbackSecret;
     config.payment.REPLAY_COOLDOWN_SECONDS = originalReplayCooldown;
     await app.close();
@@ -518,7 +522,7 @@ describe('Order/payment flow integration', () => {
 
     const response = await request(server)
       .post('/graphql')
-      .set('admin_auth_code', adminAuthCode)
+      .set('Authorization', `Bearer ${adminUserToken}`)
       .send({
         query: `
           query AdminOrders($input: OrderListInput) {
@@ -560,7 +564,7 @@ describe('Order/payment flow integration', () => {
 
     const markExpiredResponse = await request(server)
       .post('/graphql')
-      .set('admin_auth_code', adminAuthCode)
+      .set('Authorization', `Bearer ${adminUserToken}`)
       .send({
         query: `
           mutation AdminExpirePayment($input: UpdatePaymentStatusInput!) {

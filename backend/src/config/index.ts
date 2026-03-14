@@ -24,6 +24,23 @@ function toNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 function parseAlertRules(value: string | undefined): AlertRuleConfig[] {
   if (!value) {
     return defaultAlertRules;
@@ -50,12 +67,18 @@ const alertConfig: AlertConfig = {
   rules: parseAlertRules(process.env.ALERT_RULES),
 };
 
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const enableGraphqlDevToolsByDefault = nodeEnv !== 'production';
+
 export const config = {
-  NODE_ENV: process.env.NODE_ENV ?? 'development',
+  NODE_ENV: nodeEnv,
   PROJECT_NAME: process.env.PROJECT_NAME ?? 'sean-tour-backend',
   PUBLIC_IP: process.env.PUBLIC_IP ?? '',
   GRAYLOG_HOST: process.env.GRAYLOG_HOST ?? '',
   GRAYLOG_PORT: toNumber(process.env.GRAYLOG_PORT, 12201),
+  http: {
+    CORS_ORIGIN: process.env.CORS_ORIGIN ?? '',
+  },
   database: {
     url: process.env.DATABASE_URL ?? '',
     prefix: process.env.DATABASE_PREFIX ?? 'sean_tour',
@@ -64,6 +87,8 @@ export const config = {
     JWT_SECRET: process.env.JWT_SECRET ?? 'sean-tour-dev-secret',
     JWT_EXPIRES_IN: toNumber(process.env.JWT_EXPIRES_IN, 60 * 60 * 24 * 7),
     ADMIN_AUTH_CODE: process.env.ADMIN_AUTH_CODE ?? '',
+    ADMIN_USER_IDS: process.env.ADMIN_USER_IDS ?? '',
+    ADMIN_USER_EMAILS: process.env.ADMIN_USER_EMAILS ?? '',
   },
   supabase: {
     url: process.env.SUPABASE_URL ?? '',
@@ -94,6 +119,16 @@ export const config = {
     TOKEN_DECIMALS: Math.max(
       toNumber(process.env.PAYMENT_TOKEN_DECIMALS, 18),
       0,
+    ),
+  },
+  graphql: {
+    PLAYGROUND_ENABLED: toBoolean(
+      process.env.GRAPHQL_PLAYGROUND_ENABLED,
+      enableGraphqlDevToolsByDefault,
+    ),
+    INTROSPECTION_ENABLED: toBoolean(
+      process.env.GRAPHQL_INTROSPECTION_ENABLED,
+      enableGraphqlDevToolsByDefault,
     ),
   },
   ALERT_CONFIG: alertConfig,

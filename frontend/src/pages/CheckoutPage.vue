@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Card from "primevue/card";
@@ -170,9 +170,14 @@ async function copyPayAddress() {
   }
 }
 
-onMounted(async () => {
-  await loadCheckout();
-});
+watch(
+  bookingId,
+  async () => {
+    stopPolling();
+    await loadCheckout();
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
   stopPolling();

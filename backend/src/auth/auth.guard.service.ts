@@ -2,17 +2,23 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   UnauthorizedException,
   createParamDecorator,
 } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { JWTHelper } from '../helpers/sdk';
 import { config } from '../config';
+import { AdminAccessService } from './admin-access.service';
 
 type HeaderValue = string | string[] | undefined;
 
 type RequestLike = {
   headers: Record<string, HeaderValue>;
+  method?: string;
+  path?: string;
+  url?: string;
+  originalUrl?: string;
   user?: unknown;
 };
 
@@ -49,6 +55,19 @@ function readHeaderValue(
   return '';
 }
 
+function extractBearerToken(request: RequestLike): string | undefined {
+  const authHeader = readHeaderValue(request.headers, 'authorization');
+  if (!authHeader) {
+    return undefined;
+  }
+
+  const cleanHeader = authHeader.replace(/"/g, '');
+  const [type, token] = cleanHeader.split(' ');
+  const normalizedToken = token?.trim();
+
+  return type === 'Bearer' && normalizedToken ? normalizedToken : undefined;
+}
+
 /**
  * 从执行上下文中获取请求对象，自动识别 GraphQL 或 REST API
  */
@@ -72,6 +91,44 @@ function getRequestFromContext(context: ExecutionContext): RequestLike {
   throw new UnauthorizedException('Invalid HTTP request context');
 }
 
+function isGraphQLContext(context: ExecutionContext): boolean {
+  return GqlExecutionContext.create(context).getType() === 'graphql';
+}
+
+function readRequestPath(request: RequestLike): string {
+  for (const candidate of [request.originalUrl, request.url, request.path]) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return '';
+}
+
+function canBypassAdminWithAuthCode(
+  context: ExecutionContext,
+  request: RequestLike,
+  adminAuthCode: string,
+): boolean {
+  if (
+    !adminAuthCode ||
+    adminAuthCode !== config.auth.ADMIN_AUTH_CODE ||
+    !config.auth.ADMIN_AUTH_CODE.trim()
+  ) {
+    return false;
+  }
+
+  if (isGraphQLContext(context)) {
+    return false;
+  }
+
+  const requestPath = readRequestPath(request);
+  return (
+    requestPath.startsWith('/payment/callback/usdt') ||
+    requestPath.startsWith('/payment/sync')
+  );
+}
+
 export const CurrentUser = createParamDecorator(
   (_data: unknown, context: ExecutionContext) => {
     const request = getRequestFromContext(context);
@@ -87,17 +144,6 @@ export const CurrentRestUser = createParamDecorator(
   },
 );
 
-export const CheckAdmin = createParamDecorator(
-  (_data: unknown, context: ExecutionContext) => {
-    const request = getRequestFromContext(context);
-    const adminAuthCode = readHeaderValue(request.headers, 'admin_auth_code');
-
-    if (!adminAuthCode || adminAuthCode !== config.auth.ADMIN_AUTH_CODE) {
-      throw new UnauthorizedException('Unauthorized: Invalid Admin Auth Code');
-    }
-    return true;
-  },
-);
 export const CanUploadFile = createParamDecorator(
   (_data: unknown, context: ExecutionContext) => {
     const request = getRequestFromContext(context);
@@ -129,7 +175,7 @@ export class AuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = getRequestFromContext(context);
 
-    const token = this.extractTokenFromHeader(req);
+    const token = extractBearerToken(req);
 
     if (!token) {
       throw new UnauthorizedException('No token provided');
@@ -143,17 +189,56 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid token');
     }
   }
+}
 
-  private extractTokenFromHeader(request: RequestLike): string | undefined {
-    const authHeader = readHeaderValue(request.headers, 'authorization');
-    if (!authHeader) {
-      return undefined;
+@Injectable()
+export class AdminGuard implements CanActivate {
+  private jwtHelper: JWTHelper;
+
+  constructor(private readonly adminAccessService: AdminAccessService) {
+    this.jwtHelper = new JWTHelper(config.auth.JWT_SECRET);
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = getRequestFromContext(context);
+    const adminAuthCode = readHeaderValue(request.headers, 'admin_auth_code');
+
+    if (canBypassAdminWithAuthCode(context, request, adminAuthCode)) {
+      return true;
     }
 
-    const cleanHeader = authHeader.replace(/"/g, '');
-    const [type, token] = cleanHeader.split(' ');
-    const normalizedToken = token?.trim();
+    const token = extractBearerToken(request);
+    if (!token) {
+      if (adminAuthCode) {
+        throw new UnauthorizedException(
+          'Unauthorized: Invalid Admin Auth Code',
+        );
+      }
 
-    return type === 'Bearer' && normalizedToken ? normalizedToken : undefined;
+      throw new UnauthorizedException('Unauthorized: Admin access required');
+    }
+
+    try {
+      const decoded = this.jwtHelper.verifyToken(token);
+      request.user = decoded;
+
+      const hasAdminAccess = await this.adminAccessService.isAdminIdentity({
+        userId:
+          typeof decoded?.user_id === 'string' ? decoded.user_id : undefined,
+        email: typeof decoded?.email === 'string' ? decoded.email : undefined,
+      });
+
+      if (!hasAdminAccess) {
+        throw new ForbiddenException('Forbidden: Admin access required');
+      }
+
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      throw new UnauthorizedException('Invalid token');
+    }
   }
 }

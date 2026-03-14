@@ -15,6 +15,7 @@ import type {
   PaymentStatus,
   ServiceResource,
 } from "../api/travelService";
+import { useAuthStore } from "../stores/auth.store";
 
 const PAGE_SIZE = 12;
 const route = useRoute();
@@ -68,8 +69,9 @@ const actionForm = reactive({
 const resourceForm = reactive({
   resourceId: "",
 });
+const { backendUser } = useAuthStore();
 
-const adminConfigured = computed(() => adminOrderService.isAdminConfigured());
+const hasAdminAccess = computed(() => !!backendUser.value?.isAdmin);
 const hasPrevPage = computed(() => offset.value > 0);
 const pageStart = computed(() => (orders.value.length > 0 ? offset.value + 1 : 0));
 const pageEnd = computed(() => offset.value + orders.value.length);
@@ -184,7 +186,7 @@ function syncFiltersFromRoute(): void {
 }
 
 async function selectOrder(orderId: string): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     return;
   }
 
@@ -215,7 +217,7 @@ async function selectOrder(orderId: string): Promise<void> {
 }
 
 async function loadOrders(nextOffset = offset.value): Promise<void> {
-  if (!adminConfigured.value) {
+  if (!hasAdminAccess.value) {
     orders.value = [];
     selectedOrder.value = null;
     total.value = 0;
@@ -364,9 +366,8 @@ watch(
     </p>
   </section>
 
-  <Message v-if="!adminConfigured" severity="warn" class="mt-4">
-    Missing <code>VITE_BACKEND_ADMIN_AUTH_CODE</code>. Admin actions will fail
-    until it is configured.
+  <Message v-if="!hasAdminAccess" severity="warn" class="mt-4">
+    This account does not have admin access.
   </Message>
   <Message v-if="errorMessage" severity="error" class="mt-4">{{ errorMessage }}</Message>
   <Message v-if="successMessage" severity="success" class="mt-4">{{ successMessage }}</Message>

@@ -407,7 +407,10 @@ export class CatalogService implements OnModuleInit {
     return this.toServiceItem(service);
   }
 
-  async upsertService(input: UpsertServiceInput): Promise<ServiceItem> {
+  async upsertService(
+    input: UpsertServiceInput,
+    actor?: string,
+  ): Promise<ServiceItem> {
     await this.ensureSeedData();
 
     const id = input.id?.trim() || this.generateServiceId(input.type);
@@ -460,11 +463,15 @@ export class CatalogService implements OnModuleInit {
       beforeStatus: existing?.status,
       afterStatus: record.status,
       note: existing ? 'Updated service' : 'Created service',
+      actor,
     });
     return this.toServiceItem(record);
   }
 
-  async setServiceStatus(input: SetServiceStatusInput): Promise<ServiceItem> {
+  async setServiceStatus(
+    input: SetServiceStatusInput,
+    actor?: string,
+  ): Promise<ServiceItem> {
     await this.ensureSeedData();
 
     const record = await this.getServiceOrThrow(input.id);
@@ -487,11 +494,15 @@ export class CatalogService implements OnModuleInit {
       beforeStatus: record.status,
       afterStatus: updated.status,
       note: 'Admin status update',
+      actor,
     });
     return this.toServiceItem(updated);
   }
 
-  async deleteService(input: DeleteServiceInput): Promise<boolean> {
+  async deleteService(
+    input: DeleteServiceInput,
+    actor?: string,
+  ): Promise<boolean> {
     await this.ensureSeedData();
 
     const record = await this.getServiceOrThrow(input.id);
@@ -508,6 +519,7 @@ export class CatalogService implements OnModuleInit {
         beforeStatus: record.status,
         afterStatus: undefined,
         note: 'Hard delete',
+        actor,
       });
       return true;
     }
@@ -529,6 +541,7 @@ export class CatalogService implements OnModuleInit {
       beforeStatus: record.status,
       afterStatus: updated.status,
       note: 'Soft delete',
+      actor,
     });
     return true;
   }
@@ -1432,6 +1445,7 @@ export class CatalogService implements OnModuleInit {
     beforeStatus?: string;
     afterStatus?: string;
     note?: string;
+    actor?: string;
   }): Promise<void> {
     const id = `audit_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
     const auditRecord: ServiceAuditRecord = {
@@ -1442,7 +1456,7 @@ export class CatalogService implements OnModuleInit {
       beforeStatus: params.beforeStatus,
       afterStatus: params.afterStatus,
       note: params.note,
-      actor: 'admin_auth_code',
+      actor: params.actor?.trim() || 'admin_auth_code',
       createdAt: new Date().toISOString(),
     };
 

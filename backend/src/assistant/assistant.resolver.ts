@@ -1,6 +1,6 @@
 import { UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthGuard, CheckAdmin, CurrentUser } from '../auth/auth.guard.service';
+import { AdminGuard, AuthGuard, CurrentUser } from '../auth/auth.guard.service';
 import { AssistantService } from './assistant.service';
 import { AdminBatchAssignAssistantSessionsInput } from './dto/admin-batch-assign-assistant-sessions.input';
 import { AdminAssistantSessionListInput } from './dto/admin-assistant-session-list.input';
@@ -51,24 +51,24 @@ export class AssistantResolver {
   }
 
   @Query(() => AssistantSessionPage)
+  @UseGuards(AdminGuard)
   async adminAssistantSessions(
-    @CheckAdmin() _: boolean,
     @Args('input', { nullable: true }) input?: AdminAssistantSessionListInput,
   ): Promise<AssistantSessionPage> {
     return this.assistantService.adminListAssistantSessions(input);
   }
 
   @Mutation(() => AssistantSession)
+  @UseGuards(AdminGuard)
   async adminUpdateAssistantSession(
-    @CheckAdmin() _: boolean,
     @Args('input') input: AdminUpdateAssistantSessionInput,
   ): Promise<AssistantSession> {
     return this.assistantService.adminUpdateAssistantSession(input);
   }
 
   @Mutation(() => [AssistantSession])
+  @UseGuards(AdminGuard)
   async adminBatchAssignAssistantSessions(
-    @CheckAdmin() _: boolean,
     @Args('input') input: AdminBatchAssignAssistantSessionsInput,
   ): Promise<AssistantSession[]> {
     return this.assistantService.adminBatchAssignAssistantSessions(input);
