@@ -10,8 +10,10 @@ import Tag from "primevue/tag";
 import Textarea from "primevue/textarea";
 import {
   adminAccessService,
+  type AccessRole,
   type AdminAccessEntry,
   type AdminSetAccessInput,
+  type RoleAccessAuditItem,
 } from "../api/adminAccessService";
 import {
   adminSupportService,
@@ -19,8 +21,6 @@ import {
 } from "../api/adminSupportService";
 import type { SupportAgentProfile } from "../api/supportService";
 import { useAuthStore } from "../stores/auth.store";
-
-type AccessRole = "ADMIN" | "SUPPORT_AGENT";
 
 type AccessEntry = {
   id: string;
@@ -40,6 +40,8 @@ type AccessEntry = {
   openConversationCount?: number;
 };
 
+const AUDIT_PAGE_SIZE = 20;
+
 const route = useRoute();
 const router = useRouter();
 const { backendUser, refreshUser } = useAuthStore();
@@ -50,6 +52,10 @@ const saveLoading = ref(false);
 const selectedEntryId = ref("");
 const errorMessage = ref("");
 const successMessage = ref("");
+const auditEntries = ref<RoleAccessAuditItem[]>([]);
+const auditTotal = ref(0);
+const auditHasMore = ref(false);
+const auditLoading = ref(false);
 const selectedRole = ref<AccessRole>(normalizeRole(route.query.role));
 
 const form = reactive({
@@ -65,6 +71,27 @@ const hasAdminAccess = computed(() => !!backendUser.value?.isAdmin);
 const isSupportRole = computed(() => selectedRole.value === "SUPPORT_AGENT");
 const selectedEntry = computed(() =>
   entries.value.find((item) => item.id === selectedEntryId.value),
+);
+const auditScopeLabel = computed(() => {
+  if (selectedEntry.value) {
+    return (
+      selectedEntry.value.displayName ||
+      selectedEntry.value.email ||
+      selectedEntry.value.userId ||
+      selectedEntry.value.id
+    );
+  }
+
+  return selectedRole.value === "SUPPORT_AGENT"
+    ? "all support grants"
+    : "all admin grants";
+});
+const auditScopeDescription = computed(() =>
+  selectedEntry.value
+    ? `Showing access history for ${auditScopeLabel.value}.`
+    : selectedRole.value === "SUPPORT_AGENT"
+      ? "Showing recent role changes across all support grants."
+      : "Showing recent role changes across all admin grants.",
 );
 const isEditingEntry = computed(
   () => !!selectedEntry.value && selectedEntry.value.editable,
@@ -181,7 +208,66 @@ function normalizeSupportEntry(entry: SupportAgentProfile): AccessEntry {
   };
 }
 
-function resetForm(): void {
+function getAuditSeverity(action: RoleAccessAuditItem["action"]): string {
+  switch (action) {
+    case "CREATED":
+      return "success";
+    case "ENABLED":
+      return "info";
+    case "DISABLED":
+      return "danger";
+    case "UPDATED":
+    default:
+      return "contrast";
+  }
+}
+
+function formatActorLabel(actor: string): string {
+  return actor || "unknown";
+}
+
+async function loadAuditLogs(
+  nextOffset: number = 0,
+  append: boolean = false,
+): Promise<void> {
+  if (!hasAdminAccess.value) {
+    auditEntries.value = [];
+    auditTotal.value = 0;
+    auditHasMore.value = false;
+    return;
+  }
+
+  auditLoading.value = true;
+
+  try {
+    const result = await adminAccessService.listAuditLogs({
+      role: selectedRole.value,
+      recordId: selectedEntryId.value || undefined,
+      limit: AUDIT_PAGE_SIZE,
+      offset: Math.max(nextOffset, 0),
+    });
+    auditEntries.value = append
+      ? [...auditEntries.value, ...result.items]
+      : result.items;
+    auditTotal.value = result.total;
+    auditHasMore.value = result.hasMore;
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : "Failed to load audit logs.";
+  } finally {
+    auditLoading.value = false;
+  }
+}
+
+async function loadMoreAuditLogs(): Promise<void> {
+  if (auditLoading.value || !auditHasMore.value) {
+    return;
+  }
+
+  await loadAuditLogs(auditEntries.value.length, true);
+}
+
+async function resetForm(): Promise<void> {
   selectedEntryId.value = "";
   form.userId = "";
   form.email = "";
@@ -189,9 +275,11 @@ function resetForm(): void {
   form.note = "";
   form.enabled = "true";
   form.isActive = "true";
+
+  await loadAuditLogs();
 }
 
-function loadForm(entry: AccessEntry): void {
+async function loadForm(entry: AccessEntry): Promise<void> {
   selectedEntryId.value = entry.id;
   form.userId = entry.userId || "";
   form.email = entry.email || "";
@@ -199,6 +287,8 @@ function loadForm(entry: AccessEntry): void {
   form.note = entry.note || "";
   form.enabled = entry.enabled ? "true" : "false";
   form.isActive = entry.isActive ? "true" : "false";
+
+  await loadAuditLogs();
 }
 
 async function syncCurrentUser(): Promise<void> {
@@ -263,6 +353,7 @@ async function submitForm(): Promise<void> {
       updated = normalizeSupportEntry(await adminSupportService.setAgent(input));
     } else {
       const input: AdminSetAccessInput = {
+        ...(selectedEntryId.value ? { recordId: selectedEntryId.value } : {}),
         ...(form.userId.trim() ? { userId: form.userId.trim() } : {}),
         ...(form.email.trim() ? { email: form.email.trim() } : {}),
         ...(form.displayName.trim()
@@ -276,11 +367,8 @@ async function submitForm(): Promise<void> {
 
     successMessage.value = `${updated.displayName || updated.email || updated.userId || updated.id} updated.`;
     await loadEntries();
-    loadForm(updated);
-
-    if (selectedRole.value === "ADMIN") {
-      await syncCurrentUser();
-    }
+    await loadForm(updated);
+    await syncCurrentUser();
   } catch (error) {
     errorMessage.value =
       error instanceof Error
@@ -317,6 +405,7 @@ async function toggleEntry(entry: AccessEntry): Promise<void> {
     } else {
       updated = normalizeAdminEntry(
         await adminAccessService.setAccess({
+          recordId: entry.id,
           userId: entry.userId,
           email: entry.email,
           displayName: entry.displayName,
@@ -332,12 +421,11 @@ async function toggleEntry(entry: AccessEntry): Promise<void> {
     await loadEntries();
 
     if (selectedEntryId.value === entry.id) {
-      loadForm(updated);
+      await loadForm(updated);
+    } else {
+      await loadAuditLogs();
     }
-
-    if (entry.role === "ADMIN") {
-      await syncCurrentUser();
-    }
+    await syncCurrentUser();
   } catch (error) {
     errorMessage.value =
       error instanceof Error
@@ -354,7 +442,7 @@ async function selectRole(role: AccessRole): Promise<void> {
   }
 
   selectedRole.value = role;
-  resetForm();
+  await resetForm();
   await router.replace({
     query: {
       ...route.query,
@@ -373,7 +461,7 @@ watch(
     }
 
     selectedRole.value = nextRole;
-    resetForm();
+    await resetForm();
     await loadEntries();
   },
 );
@@ -381,6 +469,7 @@ watch(
 onMounted(async () => {
   await syncCurrentUser();
   await loadEntries();
+  await loadAuditLogs();
 });
 </script>
 
@@ -670,6 +759,106 @@ onMounted(async () => {
           <p class="mt-2 leading-6">
             {{ roleMeta.noteBody }}
           </p>
+        </div>
+
+        <div class="mt-5 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold text-slate-900">Access Audit</p>
+              <p class="mt-1 text-xs text-slate-500">
+                {{ auditScopeDescription }}
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <Tag
+                :value="selectedEntry ? 'Selected grant' : 'All grants'"
+                severity="contrast"
+                rounded
+              />
+              <Tag :value="`Total ${auditTotal}`" severity="secondary" rounded />
+              <Button
+                label="Refresh Logs"
+                icon="pi pi-refresh"
+                text
+                :loading="auditLoading"
+                @click="loadAuditLogs()"
+              />
+            </div>
+          </div>
+
+          <div v-if="auditLoading && auditEntries.length === 0" class="flex justify-center py-6">
+            <ProgressSpinner style="width: 26px; height: 26px" stroke-width="6" />
+          </div>
+
+          <div v-else class="mt-4 space-y-3">
+            <div
+              v-for="entry in auditEntries"
+              :key="entry.id"
+              class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <Tag
+                    :value="entry.action"
+                    :severity="getAuditSeverity(entry.action)"
+                    rounded
+                  />
+                  <Tag
+                    :value="entry.enabled ? 'ENABLED' : 'DISABLED'"
+                    :severity="entry.enabled ? 'success' : 'danger'"
+                    rounded
+                  />
+                  <Tag
+                    v-if="
+                      typeof entry.previousEnabled === 'boolean' &&
+                      entry.previousEnabled !== entry.enabled
+                    "
+                    :value="entry.previousEnabled ? 'was enabled' : 'was disabled'"
+                    severity="contrast"
+                    rounded
+                  />
+                </div>
+                <p class="text-xs text-slate-500">{{ formatDate(entry.createdAt) }}</p>
+              </div>
+              <p class="mt-2 text-sm leading-6 text-slate-800">{{ entry.summary }}</p>
+              <p class="mt-2 text-xs text-slate-500">
+                actor: {{ formatActorLabel(entry.actor) }}
+              </p>
+              <p class="mt-1 text-xs text-slate-500">
+                principal:
+                {{
+                  entry.displayName ||
+                  entry.email ||
+                  entry.userId ||
+                  entry.recordId
+                }}
+              </p>
+              <p
+                v-if="entry.note"
+                class="mt-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-600"
+              >
+                {{ entry.note }}
+              </p>
+            </div>
+
+            <p
+              v-if="auditEntries.length === 0"
+              class="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500"
+            >
+              No audit history yet for this scope.
+            </p>
+
+            <div class="flex justify-end">
+              <Button
+                v-if="auditHasMore"
+                label="Load More Activity"
+                icon="pi pi-history"
+                text
+                :loading="auditLoading"
+                @click="loadMoreAuditLogs"
+              />
+            </div>
+          </div>
         </div>
       </template>
     </Card>

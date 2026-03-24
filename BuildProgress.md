@@ -1,7 +1,7 @@
 # Build Progress
 
 ## Meta
-- Last Updated: 2026-03-14
+- Last Updated: 2026-03-21
 - Owner: Sean + Codex
 - Current Phase: MVP Capability Completion
 
@@ -157,6 +157,25 @@
   - 已增强资源运营视图：`/admin/services` 新增按 `timeSlot` 聚合的 `Dispatch Timeline`、按日期聚合的 `Date Load` 卡片，并支持点击日期卡片直接套用排班日期过滤。
   - 已补齐排班日期过滤：`adminServiceResourceSchedule` 新增可选 `date` 参数，前端排班面板支持按日筛选并在刷新/改派后保留当前日期视图；同时补充 `booking.service.spec.ts` 的日期过滤回归。
   - 资源运营视图增强本轮回归通过：`pnpm --dir frontend build`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`。
+  - 已补齐 `/admin/services` URL 可分享状态：当前选中服务与已应用排班日期现在会同步到 query，支持直接分享、刷新后恢复和浏览器前进后退；同时拆分“日期输入草稿”和“已应用日期”，修正输入日期后未点 Apply 时文案先变但数据未刷新的状态错位。
+  - `/admin/services` URL 状态同步本轮验证通过：`pnpm --dir frontend build`。
+  - 已完成 2026-03-20 现状盘点：`pnpm --dir frontend build` 当前通过；`pnpm --dir backend build` 当前失败，主要阻塞是底层 KV/cache helper 接口变更后，上层分页调用仍沿用旧的 `offset/total` 类型，以及 `createCacheDecorator` 导出缺失。
+  - 已修复 backend build 兼容层：补回 `PGKVDatabase.searchJson` 的 `offset/include_total/total` 兼容签名，并重新导出 `createCacheDecorator`；当前 `pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand` 均已恢复通过。
+  - 已完成 helper 层 lint 收口：通过对 `helpers/dbUtils`、`helpers/encodeUtils`、`helpers/web3` 中正在重构的文件补充最小兼容类型修复与规则级收口，当前 `pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand` 已全部恢复通过。
+  - 已补齐 `role_access` 角色变更审计：后端新增 `adminRoleAccessAuditLogs` GraphQL 查询与 `RoleAccessAudit*` DTO，`RoleAccessService` 现会对 `ADMIN/SUPPORT_AGENT` 授权的创建、启用、停用、更新写入 `role_access_audit:{role}:{auditId}`；同时修复按 `userId` 更新授权时误丢失既有 `email` 元数据的问题。
+  - 前端 `/admin/access` 已接入角色审计时间线：支持按当前角色查看最近授权变更，并在选中具体 grant 后切换到该记录的审计范围，包含动作、状态、操作者、备注和分页加载。
+  - 本轮角色审计验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand`、`pnpm --dir frontend build`。
+  - 已继续收口权限与审计一致性：`ADMIN` grant 编辑时现在会携带原 `recordId`，后端支持把 `email:*` grant 迁移为 `user:*` grant 并删除旧记录，不再留下重复授权；同时 `role_access` 审计 ID 改为 `randomUUID` 生成，避免低概率碰撞。
+  - 已补齐 payment 自动过期事件：pending payment 在读取时被系统标记为 `EXPIRED` 时，现在会额外写入 `PAYMENT_EVENT`，事件源为 `SYSTEM`、actor 为 `system_expiry`，后台支付观测页可直接检索与展示。
+  - 已收口前端 backend 权限刷新：auth store 现支持强制刷新 `currentUser`，admin/support 路由进入前会校验 backend token + backend role；若 backend 会话已失效，会统一走 session-expired 收口，避免“Supabase 还登录但后台接口全 401”的半失效状态。
+  - 本轮一致性优化验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand auth/admin-access.service.spec.ts payment/payment.service.spec.ts auth/auth.service.spec.ts`、`pnpm --dir backend exec jest --runInBand`、`pnpm --dir frontend build`。
+  - 已继续收口 backend 日志链路：`CommonLogger` 现在已接入 `main.ts` 作为 Nest 全局 logger，日志目录会自动创建；`WeChatService` 与 `WorkerPool` 中的裸 `console.*` 已改为统一 `Logger/CommonLogger`，并把高频 worker 流转日志降为 `debug` 级，减少生产 stdout 噪音。
+  - 本轮日志链路优化验证通过：`pnpm --dir backend lint`、`pnpm --dir backend build`。
+  - 已新增链上 e2e 初始化能力：`backend/src/helpers/web3` 现内置 `TestFaucetERC20` 合约源码、编译产物与 `TestFaucetErc20Helper`，支持部署可公开 `faucet(address)` 的测试 ERC20，并提供 `ownerMint` 辅助能力统一管理测试 token。
+  - 已新增独立部署脚本：`pnpm --dir backend deploy:payment-test-kit --rpc <RPC> --privateKey <PK>` 会顺序部署测试 ERC20 与 `BatchCall`，并把 `PAYMENT_BSC_RPC_URL / PAYMENT_BSC_CHAIN_ID / PAYMENT_USDT_BSC_TOKEN_ADDRESS / PAYMENT_BATCH_CALL_ADDRESS / PAYMENT_MASTER_PRIVATE_KEY / PAYMENT_TOKEN_DECIMALS` 自动写入目标 `.env` 文件，便于真实链上或本地链快速做 e2e 支付联调。
+  - 已继续收口支付测试部署脚本可用性：`deploy:payment-test-kit` 现在会先自动加载目标 `.env` 再读取 fallback，缺少 `DATABASE_URL` 时默认 fail fast 避免误报“ready”，并会复用或自动生成 `PAYMENT_CALLBACK_SECRET` 与 `ADMIN_AUTH_CODE`，同时新增 `--dryRun / --allowIncomplete` 以支持安全预检与纯链上部署场景。
+  - 已修复 web3 helper nonce 管理：`EthersTxHelper` 的私钥 signer 改为 `ethers.NonceManager`，避免同一私钥连续发交易时出现 `nonce has already been used`，提升后续部署脚本和链上批量写操作稳定性。
+  - 本轮支付测试基建验证通过：`pnpm --dir backend deploy:payment-test-kit --help`、`pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand src/payment/payment-wallet.service.spec.ts src/payment/payment.service.spec.ts`；同时已在本地 Anvil (`chainId=31337`) 实际部署测试 ERC20 + `BatchCall` 并验证 `faucet(address)` 可正常铸币，临时 env 输出符合 backend 支付配置格式。
 - 进行中：
   - 继续把当前 MVP 能力从“功能闭环完整”提升到“运营精细化”，重点是更强的资源排班运营视图、客服工作台增强，以及真实链上支付联调。
   - 开始进入一轮质量加固：优先处理 review 暴露出的联调可用性、客服状态一致性和数据规模/并发边界问题。
@@ -164,15 +183,24 @@
   - 评估是否为 frontend 再补 `/graphql` dev proxy 兜底，让本地开发既支持 CORS 直连也支持同源代理。
   - 继续补齐设计文档中仍偏“草案”的主 GraphQL 示例，把已落地的 `order/user/notification/assistant admin` 接口整理成更完整的 schema 附录。
   - 为 `user/profile`、`notification`、`admin orders`、`capacity/time slot` 增补后端单测与端到端回归。
-  - 将当前排班面板继续演进为更完整的日历视图，并补齐 URL 可分享的筛选状态。
-  - 配置并联调真实 USDT 收款环境参数（RPC/Token/BatchCall/MasterKey），完成链上订单创建与对账验证。
-  - 在统一 `role_access` 模型基础上继续补细粒度权限、角色变更审计查询，以及后续移除 legacy 兼容读取所需的迁移脚本。
+  - 将当前排班面板继续演进为更完整的日历视图。
+  - 使用新加的 `deploy:payment-test-kit` 在真实测试网/私链写入支付环境变量，完成 backend `createUsdtPayment -> 链上转账 -> callback/sync` 的完整联调。
+  - 在统一 `role_access` 模型基础上继续补细粒度权限、角色审计筛选/导出，以及后续移除 legacy 兼容读取所需的迁移脚本。
 
 ## Blockers
-- 当前无构建级硬阻塞。
+- 当前无构建级硬阻塞；`backend lint`、`backend build`、`backend exec jest --runInBand` 与 `frontend build` 当前均通过。
 - 剩余需要优先消化的质量风险主要是：如果后续 support 继续新增按标签/SLA 等元数据维度的重筛选，最好继续沿现在的投影方案把更多派生字段前置到 conversation record；另外若要上多实例部署，支付创建还可以再补一层跨进程/跨实例的分布式幂等保护。
 
 ## Change Log
+- 2026-03-21: 继续优化 `pnpm --dir backend deploy:payment-test-kit`，新增目标 `.env` 自动加载、`DATABASE_URL` fail-fast 预检、`PAYMENT_CALLBACK_SECRET/ADMIN_AUTH_CODE` 自动复用或生成、`--dryRun/--allowIncomplete` 参数，并同步更新 `backend/.env.example` 注释。验证 `deploy:payment-test-kit --help`、`deploy:payment-test-kit --dryRun` 与 `backend build` 通过。
+- 2026-03-20: 继续收口日志基础设施，`main.ts` 改为使用 `CommonLogger`，日志文件目录自动初始化；`WeChatService` 与 `WorkerPool` 的裸 `console.*` 已替换为统一 logger，并把 worker 常规流转降为 `debug` 级。验证 `backend lint/build` 通过。
+- 2026-03-20: 新增链上 e2e 初始化基建，内置 `TestFaucetERC20` 测试合约源码/编译产物与 `TestFaucetErc20Helper`，并新增 `pnpm --dir backend deploy:payment-test-kit` 独立脚本，可用 RPC + 私钥一键部署测试 ERC20 和 `BatchCall`、自动写入支付 `.env`；同时把 `EthersTxHelper` signer 切到 `ethers.NonceManager` 以修复连续部署 nonce 冲突。已验证 `backend lint/build`、相关 payment 单测，以及本地 Anvil 真部署 + faucet。
+- 2026-03-20: 继续修复全局一致性问题，支持 `role_access` 记录按原 `recordId` 迁移更新，避免 email grant 改 userId 后残留重复授权；payment 自动过期新增 `SYSTEM/system_expiry` 事件审计；frontend auth store/router 改为在受限路由前强制刷新 backend 当前用户并在 backend 会话失效时统一收口。重新验证 `backend lint/build/jest --runInBand` 与 `frontend build` 全通过。
+- 2026-03-20: 补齐 `role_access` 角色变更审计，后端新增 `adminRoleAccessAuditLogs` 查询并在 `RoleAccessService` 内统一记录 `ADMIN/SUPPORT_AGENT` 授权变更时间线，前端 `/admin/access` 同步接入审计展示；同时修复按 `userId` 更新授权时丢失既有 `email` 元数据的问题，并重新验证 `backend lint/build/jest --runInBand` 与 `frontend build` 全通过。
+- 2026-03-20: 完成 helper 层 lint 收口，补充 `helpers/dbUtils`、`helpers/encodeUtils`、`helpers/web3` 的最小兼容修复后，重新验证 `pnpm --dir backend lint`、`pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand` 全通过。
+- 2026-03-20: 修复 backend build 兼容层，补回 `PGKVDatabase.searchJson` 的 `offset/include_total/total` 类型与返回值兼容，并恢复 `createCacheDecorator` 对外导出；验证 `pnpm --dir backend build`、`pnpm --dir backend exec jest --runInBand` 通过，确认剩余阻塞已转为 helper 层 lint 收口。
+- 2026-03-20: 完成现状盘点，确认 frontend build 通过、backend build 当前因 KV/cache helper 接口漂移失败；同时继续保留真实链上支付、排班日历视图、细粒度权限/审计、GraphQL schema 附录和回归测试补齐为高优先级未完成项。
+- 2026-03-15: `/admin/services` 新增路由 query 同步，当前选中服务与已应用排班日期支持分享、刷新恢复与前进后退；同时拆分排班日期输入草稿与已应用筛选，修正筛选文案与实际数据不同步的问题，并通过 `pnpm --dir frontend build` 验证。
 - 2026-03-14: 收口客服工作台内容配置，新增 `supportIntakeConfig/supportWorkspaceConfig/adminUpsertSupportWorkspaceConfig`；`/support` 与 `/admin/support` 不再依赖前端硬编码模板/标签，管理员可直接在 support workspace 内维护客服话术与标签建议，并重新验证 `backend lint/build/test` 与 `frontend build` 通过。
 - 2026-03-14: frontend 新增 `/graphql` dev proxy，GraphQL 客户端默认切回同源 `/graphql`，并在 `frontend/.env.example` 增加 `VITE_BACKEND_DEV_PROXY_TARGET`，本地联调无需再手工写死 `http://localhost:3000/graphql`。
 - 2026-03-14: 收口 `createUsdtPayment` 并发幂等，改为 booking 级稳定 `paymentId` + 服务内串行化创建；同时将 `supportConversationAuditLogs` 与 support 队列（含 `priority/unassignedOnly`）切到真实 DB 分页，并通过一次性投影 backfill 兼容老数据，补充并发/过期/分页回归测试，再次验证 `frontend build`、`backend build`、backend ESLint、backend Jest 全通过。

@@ -15,7 +15,12 @@ import {
 } from "../api/adminPaymentService";
 import { useAuthStore } from "../stores/auth.store";
 
-const PAYMENT_SOURCES: PaymentEventSource[] = ["ADMIN", "CALLBACK", "SYNC"];
+const PAYMENT_SOURCES: PaymentEventSource[] = [
+  "ADMIN",
+  "CALLBACK",
+  "SYNC",
+  "SYSTEM",
+];
 const PAYMENT_STATUSES: PaymentStatus[] = [
   "PENDING",
   "PARTIALLY_PAID",

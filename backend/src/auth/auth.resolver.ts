@@ -9,6 +9,9 @@ import { EmailAuthInput } from './dto/email-auth.input';
 import { GoogleLoginInput } from './dto/google-login.input';
 import { SupabaseTokenLoginInput } from './dto/supabase-token-login.input';
 import { CurrentUserDto } from './dto/current-user.dto';
+import { PageInput } from '../common/dto/page.input';
+import { RoleAccessAuditPage } from './dto/role-access-audit-page.dto';
+import { RoleAccessRoleEnum } from './dto/role-access-role.enum';
 
 @Resolver()
 export class AuthResolver {
@@ -58,5 +61,15 @@ export class AuthResolver {
     @Args('input') input: AdminSetAccessInput,
   ): Promise<AdminAccess> {
     return this.authService.setAdminAccess(input, user);
+  }
+
+  @Query(() => RoleAccessAuditPage)
+  @UseGuards(AdminGuard)
+  async adminRoleAccessAuditLogs(
+    @Args('role', { type: () => RoleAccessRoleEnum }) role: RoleAccessRoleEnum,
+    @Args('recordId', { nullable: true }) recordId?: string,
+    @Args('page', { nullable: true }) page?: PageInput,
+  ): Promise<RoleAccessAuditPage> {
+    return this.authService.listRoleAccessAuditLogs(role, recordId, page);
   }
 }

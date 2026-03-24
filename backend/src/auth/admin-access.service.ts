@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DBService } from '../common/db.service';
+import { PageInput } from '../common/dto/page.input';
 import { AdminAccess } from './dto/admin-access.dto';
+import { RoleAccessAudit } from './dto/role-access-audit.dto';
 import { AdminSetAccessInput } from './dto/admin-set-access.input';
+import { RoleAccessAuditPage } from './dto/role-access-audit-page.dto';
+import { RoleAccessRoleEnum } from './dto/role-access-role.enum';
 import { RoleAccessService } from './role-access.service';
 
 @Injectable()
@@ -64,6 +68,29 @@ export class AdminAccessService {
       updatedBy: entry.updatedBy,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
+    };
+  }
+
+  async listRoleAccessAuditLogs(
+    role: 'ADMIN' | 'SUPPORT_AGENT',
+    recordId?: string,
+    page?: PageInput,
+  ): Promise<RoleAccessAuditPage> {
+    const result = await this.roleAccessService.listRoleAccessAuditLogs(role, {
+      recordId,
+      limit: page?.limit,
+      offset: page?.offset,
+    });
+
+    return {
+      ...result,
+      items: result.items.map(
+        (item) =>
+          ({
+            ...item,
+            role: item.role as RoleAccessRoleEnum,
+          }) as RoleAccessAudit,
+      ),
     };
   }
 }

@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "smoke:payment-callback": "node scripts/payment-callback-smoke.mjs"
+    "smoke:payment-callback": "node scripts/payment-callback-smoke.mjs",
+    "deploy:payment-test-kit": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/deploy-payment-test-kit.ts"
   },
   "dependencies": {
     "@apollo/server": "^5.4.0",

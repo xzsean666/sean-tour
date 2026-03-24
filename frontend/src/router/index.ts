@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { handleSessionExpired } from '../api/sessionExpiry';
 import { initAuthStore, useAuthStore } from '../stores/auth.store';
 
 const ServicesPage = () => import('../pages/ServicesPage.vue');
@@ -201,7 +202,21 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   await initAuthStore();
-  const { user, backendUser } = useAuthStore();
+  const { user, backendToken, backendUser, refreshUser } = useAuthStore();
+
+  const requiresBackendRole =
+    !!to.meta.requiresAdmin || !!to.meta.requiresSupportWorkspace;
+
+  if (to.meta.requiresAuth && user.value) {
+    await refreshUser({
+      forceBackendUserRefresh: requiresBackendRole || !backendUser.value,
+    });
+
+    if (!backendToken.value || (requiresBackendRole && !backendUser.value)) {
+      await handleSessionExpired(to.fullPath);
+      return false;
+    }
+  }
 
   if (to.meta.requiresAuth && !user.value) {
     return {

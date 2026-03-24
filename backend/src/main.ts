@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { config } from './config';
 import { AppModule } from './app.module';
+import { CommonLogger } from './common/common-log.service';
 
 function parseCorsOrigins(value: string): string[] {
   return value
@@ -10,7 +11,9 @@ function parseCorsOrigins(value: string): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: new CommonLogger(),
+  });
   const corsOrigins = parseCorsOrigins(config.http.CORS_ORIGIN);
 
   if (config.NODE_ENV !== 'production' || corsOrigins.length > 0) {

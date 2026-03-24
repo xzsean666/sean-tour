@@ -1,6 +1,6 @@
 import { requestBackendGraphQL } from "./backendGraphqlClient";
 
-export type PaymentEventSource = "ADMIN" | "CALLBACK" | "SYNC";
+export type PaymentEventSource = "ADMIN" | "CALLBACK" | "SYNC" | "SYSTEM";
 export type PaymentStatus =
   | "PENDING"
   | "PARTIALLY_PAID"

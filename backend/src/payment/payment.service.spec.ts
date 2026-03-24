@@ -322,6 +322,18 @@ describe('PaymentService', () => {
     expect(
       (store.get('payment:pay_bk_retry_1') as { status: PaymentStatus }).status,
     ).toBe(PaymentStatus.EXPIRED);
+    expect(
+      [...store.values()].find(
+        (value) =>
+          (value as { entityType?: string }).entityType === 'PAYMENT_EVENT',
+      ),
+    ).toMatchObject({
+      source: PaymentEventSource.SYSTEM,
+      actor: 'system_expiry',
+      status: PaymentStatus.EXPIRED,
+      paymentId: 'pay_bk_retry_1',
+      bookingId: 'bk_retry_1',
+    });
   });
 
   it('rejects callback update when signature is invalid', async () => {

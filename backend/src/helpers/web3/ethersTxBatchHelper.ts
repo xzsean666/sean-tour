@@ -1,206 +1,423 @@
-import { EthersTxHelper } from './ethersTxHelper';
-
 import { ethers } from 'ethers';
+import {
+  EthersTxHelper,
+  type EthersTxHelperConfig,
+  type EthersTxOverrides,
+  type WaitReceiptOptions,
+} from './ethersTxHelper';
 
-interface EthersTxBatchHelperConfig {
-  private_key?: string;
-  batch_call_address?: string;
-}
+type BatchCallStructMode = 'legacy' | 'v1';
 
-interface BatchContractCall {
+export interface BatchCallInput {
   target: string;
   data: string;
   abi: ethers.InterfaceAbi;
   function_name: string;
-  execute_args: unknown[];
+  execute_args?: unknown[];
+  value?: ethers.BigNumberish;
+  valueEther?: string;
+  gasLimit?: ethers.BigNumberish;
 }
 
-interface BatchStaticCallResult {
+export interface BatchStaticCallFailureResult {
   target: string;
-  success: boolean;
-  decodedData: ethers.Result | string | null;
+  success: false;
+  decoded: false;
+  decodedData: null;
+  rawData: string;
   function: string;
   args: unknown[];
 }
 
-interface BatchWriteCallResult {
+export interface BatchStaticCallDecodedResult {
+  target: string;
+  success: true;
+  decoded: true;
+  decodedData: ethers.Result;
+  rawData: string;
+  function: string;
+  args: unknown[];
+}
+
+export interface BatchStaticCallRawResult {
+  target: string;
+  success: true;
+  decoded: false;
+  decodedData: string;
+  rawData: string;
+  function: string;
+  args: unknown[];
+  decodeError: string;
+}
+
+export type BatchStaticCallResult =
+  | BatchStaticCallFailureResult
+  | BatchStaticCallDecodedResult
+  | BatchStaticCallRawResult;
+
+export interface BatchWriteResult {
   target: string;
   success: boolean;
   transactionHash: string;
   function: string;
   args: unknown[];
+  error?: string;
 }
+
+export interface BatchCallOptions extends WaitReceiptOptions {
+  waitConfirm?: boolean;
+  txOverrides?: EthersTxOverrides;
+}
+
+export interface EthersTxBatchHelperConfig extends EthersTxHelperConfig {
+  batch_call_address?: string;
+  batch_call_abi?: ethers.InterfaceAbi;
+  batch_call_bytecode?: string;
+}
+
+const batchGetBalancesAbi = [
+  {
+    inputs: [
+      {
+        internalType: 'address[]',
+        name: 'addresses',
+        type: 'address[]',
+      },
+    ],
+    name: 'batchGetBalances',
+    outputs: [
+      {
+        internalType: 'uint256[]',
+        name: 'balances',
+        type: 'uint256[]',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
 
 export class EthersTxBatchHelper extends EthersTxHelper {
   public batch_call_address?: string;
+  private readonly batchCallAbi: ethers.InterfaceAbi;
+  private readonly batchCallBytecode?: string;
+  private readonly batchCallStructMode: BatchCallStructMode;
 
   constructor(
     NODE_PROVIDER: string | ethers.BrowserProvider | ethers.JsonRpcProvider,
-    config?: EthersTxBatchHelperConfig,
+    config: EthersTxBatchHelperConfig = {},
   ) {
     super(NODE_PROVIDER, config);
-    this.batch_call_address = config?.batch_call_address;
+    this.batch_call_address = config.batch_call_address;
+    this.batchCallAbi = config.batch_call_abi ?? batchCallABI;
+    this.batchCallBytecode =
+      config.batch_call_bytecode ??
+      (config.batch_call_abi ? undefined : batchCallBytesCode);
+    this.batchCallStructMode = this.resolveBatchCallStructMode(
+      this.batchCallAbi,
+    );
   }
 
-  private formatErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return String(error);
+  private getArgs(call: BatchCallInput): unknown[] {
+    return call.execute_args ?? [];
   }
 
-  private getTransactionHash(
-    tx: ethers.TransactionResponse | ethers.TransactionReceipt,
-  ): string {
-    if ('hash' in tx && typeof tx.hash === 'string') {
-      return tx.hash;
-    }
-    if ('transactionHash' in tx && typeof tx.transactionHash === 'string') {
-      return tx.transactionHash;
-    }
-    return '';
+  private getBatchErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
-  async deployBatchCallContract(): Promise<ethers.BaseContract> {
-    const result = await this.deployContract(batchCallABI, batchCallBytesCode);
-    return result;
+  private logInfo(...args: unknown[]) {
+    this.logger?.info?.(...args);
+  }
+
+  private logWarn(...args: unknown[]) {
+    this.logger?.warn?.(...args);
+  }
+
+  private logError(...args: unknown[]) {
+    this.logger?.error?.(...args);
+  }
+
+  private resolveBatchCallStructMode(
+    abi: ethers.InterfaceAbi,
+  ): BatchCallStructMode {
+    const iface = new ethers.Interface(abi);
+    const fragment = iface.getFunction('batchCall');
+
+    if (!fragment) {
+      return 'legacy';
+    }
+
+    const callsInput = fragment.inputs[0];
+    const components = callsInput?.arrayChildren?.components ?? [];
+    const componentNames = new Set(
+      components.map((component) => component.name),
+    );
+
+    return componentNames.has('value') || componentNames.has('gasLimit')
+      ? 'v1'
+      : 'legacy';
+  }
+
+  private resolveCallValue(call: BatchCallInput): bigint {
+    if (call.value !== undefined && call.valueEther !== undefined) {
+      throw new Error('batch call 的 value 和 valueEther 不能同时传入');
+    }
+
+    if (call.valueEther !== undefined) {
+      return ethers.parseEther(call.valueEther);
+    }
+
+    if (call.value === undefined) {
+      return 0n;
+    }
+
+    return ethers.toBigInt(call.value);
+  }
+
+  private resolveCallGasLimit(call: BatchCallInput): bigint {
+    if (call.gasLimit === undefined) {
+      return 0n;
+    }
+
+    return ethers.toBigInt(call.gasLimit);
+  }
+
+  private normalizeBatchLimit(batchLimit: number): number {
+    if (!Number.isFinite(batchLimit) || batchLimit < 1) {
+      return 1;
+    }
+
+    return Math.max(1, Math.floor(batchLimit));
+  }
+
+  private encodeBatchCalls(calls: BatchCallInput[]) {
+    return calls.map((call) => {
+      const value = this.resolveCallValue(call);
+      const gasLimit = this.resolveCallGasLimit(call);
+
+      if (this.batchCallStructMode === 'legacy') {
+        if (value !== 0n || gasLimit !== 0n) {
+          throw new Error(
+            '当前 batchCall ABI 不支持 value/gasLimit；请切换到 batchCallV1ABI 或自定义 ABI',
+          );
+        }
+
+        return {
+          target: call.target,
+          callData: call.data,
+        };
+      }
+
+      return {
+        target: call.target,
+        callData: call.data,
+        value,
+        gasLimit,
+      };
+    });
+  }
+
+  private sumBatchCallValue(calls: BatchCallInput[]): bigint {
+    return calls.reduce((sum, call) => sum + this.resolveCallValue(call), 0n);
+  }
+
+  protected isDecodedBatchResult(
+    result: BatchStaticCallResult,
+  ): result is BatchStaticCallDecodedResult {
+    return result.success && result.decoded;
+  }
+
+  protected getDecodedValueAt<T>(
+    result: BatchStaticCallResult,
+    index: number = 0,
+  ): T | undefined {
+    if (!this.isDecodedBatchResult(result)) {
+      return undefined;
+    }
+
+    return result.decodedData[index] as T | undefined;
+  }
+
+  async deployBatchCallContract(
+    constructorArgs: unknown[] = [],
+  ): Promise<ethers.BaseContract> {
+    if (!this.batchCallBytecode) {
+      throw new Error('当前未配置可部署的 batch call bytecode');
+    }
+
+    return await this.deployContract(
+      this.batchCallAbi,
+      this.batchCallBytecode,
+      constructorArgs,
+    );
   }
 
   async batchStaticCall(
-    calls: BatchContractCall[],
-    blockNumber?: number,
+    calls: BatchCallInput[],
+    blockNumber?: ethers.BlockTag,
     batchLimit: number = 200,
   ): Promise<BatchStaticCallResult[]> {
-    const i_batch_call_abi = batchCallABI;
-
     if (!this.batch_call_address) {
       throw new Error('BatchCallAddress not provided!');
     }
 
+    if (calls.length === 0) {
+      return [];
+    }
+
+    const safeBatchLimit = this.normalizeBatchLimit(batchLimit);
     const results: BatchStaticCallResult[] = [];
-    // 按batchLimit分批处理
-    for (let i = 0; i < calls.length; i += batchLimit) {
-      const batch_calls = calls.slice(i, i + batchLimit);
-      console.log(
-        `处理批次 ${i / batchLimit + 1}, 大小: ${batch_calls.length}`,
+    for (let i = 0; i < calls.length; i += safeBatchLimit) {
+      const batch_calls = calls.slice(i, i + safeBatchLimit);
+      const encodedCalls = this.encodeBatchCalls(batch_calls);
+      this.logInfo(
+        `处理批次 ${i / safeBatchLimit + 1}, 大小: ${batch_calls.length}`,
       );
 
-      // 执行批量调用
       const [successes, return_data] = await this.callReadContract<
         [boolean[], string[]]
       >({
         target: this.batch_call_address,
-        abi: i_batch_call_abi,
+        abi: this.batchCallAbi,
         function_name: 'batchStaticCall',
-        execute_args: [
-          batch_calls.map((call) => ({
-            target: call.target,
-            callData: call.data,
-          })),
-        ],
+        execute_args: [encodedCalls],
         blockTag: blockNumber,
       });
 
-      // 解码返回结果
-      const batch_results = return_data.map((data: string, index: number) => {
-        const call = batch_calls[index];
-        if (!call) return null;
+      const batch_results = return_data
+        .map((data: string, index: number) => {
+          const call = batch_calls[index];
+          if (!call) {
+            return null;
+          }
 
-        if (!successes[index]) {
-          return {
-            target: call.target,
-            success: false,
-            decodedData: null,
-            function: call.function_name,
-            args: call.execute_args,
-          };
-        }
+          const args = this.getArgs(call);
+          if (!successes[index]) {
+            return {
+              target: call.target,
+              success: false,
+              decoded: false,
+              decodedData: null,
+              rawData: data,
+              function: call.function_name,
+              args,
+            } satisfies BatchStaticCallFailureResult;
+          }
 
-        try {
-          const decoded_data = this.decodeResultDataByABI({
-            abi: call.abi,
-            function_name: call.function_name,
-            data,
-          });
-          return {
-            target: call.target,
-            success: true,
-            decodedData: decoded_data,
-            function: call.function_name,
-            args: call.execute_args,
-          };
-        } catch (error) {
-          console.warn(`解码数据失败 (${call.function_name}):`, error);
-          return {
-            target: call.target,
-            success: true,
-            decodedData: data,
-            function: call.function_name,
-            args: call.execute_args,
-          };
-        }
-      });
+          try {
+            const decoded_data = this.decodeResultDataByABI({
+              abi: call.abi,
+              function_name: call.function_name,
+              data,
+            });
 
-      results.push(
-        ...batch_results.filter(
-          (res): res is BatchStaticCallResult => res !== null,
-        ),
-      );
+            return {
+              target: call.target,
+              success: true,
+              decoded: true,
+              decodedData: decoded_data,
+              rawData: data,
+              function: call.function_name,
+              args,
+            } satisfies BatchStaticCallDecodedResult;
+          } catch (error) {
+            const message = this.getBatchErrorMessage(error);
+            this.logWarn(`解码数据失败 (${call.function_name})`, error);
+
+            return {
+              target: call.target,
+              success: true,
+              decoded: false,
+              decodedData: data,
+              rawData: data,
+              function: call.function_name,
+              args,
+              decodeError: message,
+            } satisfies BatchStaticCallRawResult;
+          }
+        })
+        .filter((result): result is BatchStaticCallResult => result !== null);
+
+      results.push(...batch_results);
     }
+
     return results;
   }
 
   async batchCall(
-    calls: BatchContractCall[],
+    calls: BatchCallInput[],
     batchLimit: number = 200,
-  ): Promise<BatchWriteCallResult[]> {
-    const i_batch_call_abi = batchCallABI;
-
+    options: BatchCallOptions = {},
+  ): Promise<BatchWriteResult[]> {
     if (!this.batch_call_address) {
       throw new Error('BatchCallAddress未提供！');
     }
 
-    const results: BatchWriteCallResult[] = [];
+    if (calls.length === 0) {
+      return [];
+    }
 
-    for (let i = 0; i < calls.length; i += batchLimit) {
-      const batch_calls = calls.slice(i, i + batchLimit);
-      console.log(
-        `处理批次 ${i / batchLimit + 1}, 大小: ${batch_calls.length}`,
+    if (
+      (options.confirmations !== undefined ||
+        options.timeoutMs !== undefined) &&
+      options.waitConfirm !== true
+    ) {
+      throw new Error(
+        'batchCall 的 confirmations 和 timeoutMs 需要与 waitConfirm: true 一起使用',
+      );
+    }
+
+    const safeBatchLimit = this.normalizeBatchLimit(batchLimit);
+    const results: BatchWriteResult[] = [];
+
+    for (let i = 0; i < calls.length; i += safeBatchLimit) {
+      const batch_calls = calls.slice(i, i + safeBatchLimit);
+      const encodedCalls = this.encodeBatchCalls(batch_calls);
+      const totalValue = this.sumBatchCallValue(batch_calls);
+      this.logInfo(
+        `处理批次 ${i / safeBatchLimit + 1}, 大小: ${batch_calls.length}`,
       );
 
       try {
-        const tx_response = await this.callContract({
-          target: this.batch_call_address,
-          abi: i_batch_call_abi,
-          function_name: 'batchCall',
-          execute_args: [
-            batch_calls.map((call) => ({
-              target: call.target,
-              callData: call.data,
-            })),
-          ],
-        });
+        const tx_response =
+          options.waitConfirm === true
+            ? await this.callContract({
+                target: this.batch_call_address,
+                abi: this.batchCallAbi,
+                function_name: 'batchCall',
+                execute_args: [encodedCalls],
+                value: totalValue,
+                waitConfirm: true,
+                confirmations: options.confirmations,
+                timeoutMs: options.timeoutMs,
+                txOverrides: options.txOverrides,
+              })
+            : await this.callContract({
+                target: this.batch_call_address,
+                abi: this.batchCallAbi,
+                function_name: 'batchCall',
+                execute_args: [encodedCalls],
+                value: totalValue,
+                waitConfirm: false,
+                txOverrides: options.txOverrides,
+              });
 
         const batch_results = batch_calls.map((call) => ({
           target: call.target,
           success: true,
-          transactionHash: this.getTransactionHash(tx_response),
+          transactionHash: tx_response.hash,
           function: call.function_name,
-          args: call.execute_args,
+          args: this.getArgs(call),
         }));
 
         results.push(...batch_results);
       } catch (error) {
-        console.error(`批量写入调用失败:`, error);
-        const failed_results = batch_calls.map((call) => ({
-          target: call.target,
-          success: false,
-          transactionHash: '',
-          function: call.function_name,
-          args: call.execute_args,
-        }));
-        results.push(...failed_results);
-        throw new Error(`批量写入调用失败: ${this.formatErrorMessage(error)}`);
+        const message = this.getBatchErrorMessage(error);
+        this.logError('批量写入调用失败', error);
+        throw new Error(`批量写入调用失败: ${message}`, {
+          cause: error instanceof Error ? error : undefined,
+        });
       }
     }
 
@@ -216,7 +433,7 @@ export class EthersTxBatchHelper extends EthersTxHelper {
    */
   async batchGetNativeBalances(
     addresses: string[],
-    blockNumber?: number | 'latest',
+    blockNumber?: ethers.BlockTag,
     batchLimit: number = 200,
   ): Promise<
     Array<{
@@ -229,50 +446,32 @@ export class EthersTxBatchHelper extends EthersTxHelper {
       throw new Error('BatchCallAddress not provided!');
     }
 
+    if (addresses.length === 0) {
+      return [];
+    }
+
+    const safeBatchLimit = this.normalizeBatchLimit(batchLimit);
     const results: Array<{
       address: string;
       balance: bigint;
       success: boolean;
     }> = [];
 
-    // 按 batchLimit 分批处理
-    for (let i = 0; i < addresses.length; i += batchLimit) {
-      const batch_addresses = addresses.slice(i, i + batchLimit);
-      console.log(
-        `处理批次 ${Math.floor(i / batchLimit) + 1}, 大小: ${batch_addresses.length}`,
+    for (let i = 0; i < addresses.length; i += safeBatchLimit) {
+      const batch_addresses = addresses.slice(i, i + safeBatchLimit);
+      this.logInfo(
+        `处理批次 ${Math.floor(i / safeBatchLimit) + 1}, 大小: ${batch_addresses.length}`,
       );
 
       try {
-        // 调用合约的 batchGetBalances 方法
         const balances = await this.callReadContract<bigint[]>({
           target: this.batch_call_address,
-          abi: [
-            {
-              inputs: [
-                {
-                  internalType: 'address[]',
-                  name: 'addresses',
-                  type: 'address[]',
-                },
-              ],
-              name: 'batchGetBalances',
-              outputs: [
-                {
-                  internalType: 'uint256[]',
-                  name: 'balances',
-                  type: 'uint256[]',
-                },
-              ],
-              stateMutability: 'view',
-              type: 'function',
-            },
-          ],
+          abi: batchGetBalancesAbi,
           function_name: 'batchGetBalances',
           execute_args: [batch_addresses],
           blockTag: blockNumber,
         });
 
-        // 格式化返回结果
         const batch_results = batch_addresses.map((address, index) => ({
           address,
           balance: balances[index] || 0n,
@@ -280,9 +479,8 @@ export class EthersTxBatchHelper extends EthersTxHelper {
         }));
 
         results.push(...batch_results);
-      } catch (error: any) {
-        console.error(`批量查询余额失败:`, error);
-        // 如果批量查询失败，标记所有地址为失败
+      } catch (error) {
+        this.logError('批量查询余额失败', error);
         const failed_results = batch_addresses.map((address) => ({
           address,
           balance: 0n,
@@ -429,6 +627,306 @@ export const batchCallABI = [
       },
     ],
     stateMutability: 'view',
+    type: 'function',
+  },
+];
+
+export const batchCallV1ABI = [
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'initialOwner',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'nonpayable',
+    type: 'constructor',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: 'address',
+        name: 'target',
+        type: 'address',
+      },
+      {
+        indexed: false,
+        internalType: 'bool',
+        name: 'success',
+        type: 'bool',
+      },
+      {
+        indexed: false,
+        internalType: 'bytes32',
+        name: 'resultHash',
+        type: 'bytes32',
+      },
+      {
+        indexed: false,
+        internalType: 'uint256',
+        name: 'gasUsed',
+        type: 'uint256',
+      },
+    ],
+    name: 'CallResult',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: 'address',
+        name: 'target',
+        type: 'address',
+      },
+      {
+        indexed: false,
+        internalType: 'string',
+        name: 'reason',
+        type: 'string',
+      },
+    ],
+    name: 'CallError',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: 'address',
+        name: 'caller',
+        type: 'address',
+      },
+    ],
+    name: 'CallerAuthorized',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: 'address',
+        name: 'caller',
+        type: 'address',
+      },
+    ],
+    name: 'CallerRevoked',
+    type: 'event',
+  },
+  {
+    inputs: [
+      {
+        components: [
+          {
+            internalType: 'address',
+            name: 'target',
+            type: 'address',
+          },
+          {
+            internalType: 'bytes',
+            name: 'callData',
+            type: 'bytes',
+          },
+          {
+            internalType: 'uint256',
+            name: 'value',
+            type: 'uint256',
+          },
+          {
+            internalType: 'uint256',
+            name: 'gasLimit',
+            type: 'uint256',
+          },
+        ],
+        internalType: 'struct Multicall[]',
+        name: 'calls',
+        type: 'tuple[]',
+      },
+    ],
+    name: 'batchCall',
+    outputs: [
+      {
+        internalType: 'bool[]',
+        name: 'successes',
+        type: 'bool[]',
+      },
+      {
+        internalType: 'bytes[]',
+        name: 'results',
+        type: 'bytes[]',
+      },
+    ],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        components: [
+          {
+            internalType: 'address',
+            name: 'target',
+            type: 'address',
+          },
+          {
+            internalType: 'bytes',
+            name: 'callData',
+            type: 'bytes',
+          },
+          {
+            internalType: 'uint256',
+            name: 'value',
+            type: 'uint256',
+          },
+          {
+            internalType: 'uint256',
+            name: 'gasLimit',
+            type: 'uint256',
+          },
+        ],
+        internalType: 'struct Multicall[]',
+        name: 'calls',
+        type: 'tuple[]',
+      },
+    ],
+    name: 'batchStaticCall',
+    outputs: [
+      {
+        internalType: 'bool[]',
+        name: 'successes',
+        type: 'bool[]',
+      },
+      {
+        internalType: 'bytes[]',
+        name: 'results',
+        type: 'bytes[]',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address[]',
+        name: 'addresses',
+        type: 'address[]',
+      },
+    ],
+    name: 'batchGetBalances',
+    outputs: [
+      {
+        internalType: 'uint256[]',
+        name: 'balances',
+        type: 'uint256[]',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'caller',
+        type: 'address',
+      },
+    ],
+    name: 'grantAccess',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'caller',
+        type: 'address',
+      },
+    ],
+    name: 'revokeAccess',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'caller',
+        type: 'address',
+      },
+    ],
+    name: 'authorizedCallers',
+    outputs: [
+      {
+        internalType: 'bool',
+        name: '',
+        type: 'bool',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'owner',
+    outputs: [
+      {
+        internalType: 'address',
+        name: '',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'to',
+        type: 'address',
+      },
+      {
+        internalType: 'uint256',
+        name: 'amount',
+        type: 'uint256',
+      },
+    ],
+    name: 'rescueETH',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'contract IERC20',
+        name: 'token',
+        type: 'address',
+      },
+      {
+        internalType: 'address',
+        name: 'to',
+        type: 'address',
+      },
+      {
+        internalType: 'uint256',
+        name: 'amount',
+        type: 'uint256',
+      },
+    ],
+    name: 'rescueToken',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
 ];

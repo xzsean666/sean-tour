@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { config } from '../config';
 import axios from 'axios';
 
@@ -17,7 +17,7 @@ export interface WechatIdentityResult {
 
 @Injectable()
 export class WeChatService {
-  // Hard-coded values or environment variables can be used directly
+  private readonly logger = new Logger(WeChatService.name);
   private readonly appId = config.wechat.WECHAT_APP_ID;
   private readonly appSecret = config.wechat.WECHAT_APP_SECRET;
 
@@ -68,7 +68,7 @@ export class WeChatService {
       if (error instanceof HttpException) {
         throw error;
       }
-      console.error('WeChat login failed', error);
+      this.logger.error('WeChat login failed', error);
       throw new HttpException(
         'WeChat login failed',
         HttpStatus.INTERNAL_SERVER_ERROR,

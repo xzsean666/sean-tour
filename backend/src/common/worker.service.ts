@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Worker } from 'worker_threads';
 import * as crypto from 'crypto';
 
@@ -95,6 +95,7 @@ function isTaskOptions(value: unknown): value is TaskOptions {
 
 @Injectable()
 export class WorkerPool implements OnModuleDestroy {
+  private readonly logger = new Logger(WorkerPool.name);
   private minPoolSize: number;
   private maxPoolSize: number;
   private defaultTimeout: number;
@@ -119,7 +120,9 @@ export class WorkerPool implements OnModuleDestroy {
 
     // 定期检查超时任务
     this.timeoutCheckInterval = setInterval(() => this.checkTimeouts(), 5000);
-    console.log('WorkerPool initialized with stats:', this.getStats());
+    this.logger.debug(
+      `WorkerPool initialized. Pool stats: ${this.getStatsSummary()}`,
+    );
   }
 
   private generateTaskId(): string {
@@ -223,8 +226,8 @@ export class WorkerPool implements OnModuleDestroy {
       if (!task.fireAndForget) {
         if (msg.type === 'task_error') {
           // 检查是否需要重试
-          console.log(
-            `Task ${task.id} in handleMessage (error): retries=${task.retries}, maxRetries=${task.maxRetries}. Should retry: ${this.shouldRetry(task)}`,
+          this.logger.debug(
+            `Task ${task.id} in handleMessage(error): retries=${task.retries}, maxRetries=${task.maxRetries}, shouldRetry=${this.shouldRetry(task)}. Pool stats: ${this.getStatsSummary()}`,
           );
           if (this.shouldRetry(task)) {
             this.retryTask(task);
@@ -246,8 +249,8 @@ export class WorkerPool implements OnModuleDestroy {
     const workerId = worker.threadId; // Capture workerId early
 
     if (task) {
-      console.log(
-        `Task ${task.id} in handleError: retries=${task.retries}, maxRetries=${task.maxRetries}. Should retry: ${this.shouldRetry(task)}`,
+      this.logger.debug(
+        `Task ${task.id} in handleError: retries=${task.retries}, maxRetries=${task.maxRetries}, shouldRetry=${this.shouldRetry(task)}. Pool stats: ${this.getStatsSummary()}`,
       );
     }
 
@@ -258,9 +261,9 @@ export class WorkerPool implements OnModuleDestroy {
         task.reject?.(err);
       }
     } else if (task && task.fireAndForget && !this.shouldRetry(task)) {
-      console.error(
-        `Fire-and-forget task ${task.id} failed after maximum retries:`,
-        err,
+      this.logger.error(
+        `Fire-and-forget task ${task.id} failed after maximum retries.`,
+        err.stack,
       );
     } else if (task && task.fireAndForget && this.shouldRetry(task)) {
       this.retryTask(task);
@@ -268,9 +271,10 @@ export class WorkerPool implements OnModuleDestroy {
 
     this.removeWorker(worker);
     this.runNext();
-    console.warn(
-      `Task ${task?.id} on worker ${workerId} failed. Retrying: ${task && this.shouldRetry(task)}. Pool stats:`,
-      this.getStats(),
+    this.logger.warn(
+      `Task ${task?.id} on worker ${workerId} failed. Retrying=${Boolean(
+        task && this.shouldRetry(task),
+      )}. Pool stats: ${this.getStatsSummary()}`,
     );
   }
 
@@ -280,15 +284,15 @@ export class WorkerPool implements OnModuleDestroy {
 
     // 重新排队当前任务
     if (task) {
-      console.log(
-        `Task ${task.id} in handleExit: retries=${task.retries}, maxRetries=${task.maxRetries}. Should retry: ${this.shouldRetry(task)}`,
+      this.logger.debug(
+        `Task ${task.id} in handleExit: retries=${task.retries}, maxRetries=${task.maxRetries}, shouldRetry=${this.shouldRetry(task)}. Pool stats: ${this.getStatsSummary()}`,
       );
       if (this.shouldRetry(task)) {
         this.retryTask(task);
       } else if (!task.fireAndForget) {
         task.reject?.(new Error('Worker exited unexpectedly'));
       } else {
-        console.error(
+        this.logger.error(
           `Fire-and-forget task ${task.id} failed due to unexpected worker exit after maximum retries.`,
         );
       }
@@ -296,9 +300,8 @@ export class WorkerPool implements OnModuleDestroy {
 
     this.removeWorker(worker);
     this.runNext();
-    console.warn(
-      `Worker ${workerId} exited unexpectedly. Task ${task?.id} was active. Pool stats:`,
-      this.getStats(),
+    this.logger.warn(
+      `Worker ${workerId} exited unexpectedly. Task ${task?.id} was active. Pool stats: ${this.getStatsSummary()}`,
     );
   }
 
@@ -312,9 +315,8 @@ export class WorkerPool implements OnModuleDestroy {
     task.retries = (task.retries ?? 0) + 1;
     this.taskQueue.unshift(task); // 优先重试
     this.runNext();
-    console.log(
-      `Task ${task.id} retried. Current retries: ${task.retries}. Pool stats:`,
-      this.getStats(),
+    this.logger.debug(
+      `Task ${task.id} retried. Current retries=${task.retries}. Pool stats: ${this.getStatsSummary()}`,
     );
   }
 
@@ -326,9 +328,8 @@ export class WorkerPool implements OnModuleDestroy {
 
     this.idleWorkers.push(worker);
     this.runNext();
-    console.log(
-      `Task ${task.id} completed. Worker ${worker.threadId} is now idle. Pool stats:`,
-      this.getStats(),
+    this.logger.debug(
+      `Task ${task.id} completed. Worker ${worker.threadId} is now idle. Pool stats: ${this.getStatsSummary()}`,
     );
   }
 
@@ -353,8 +354,8 @@ export class WorkerPool implements OnModuleDestroy {
         if (now - worker._taskStartTime > timeout) {
           // 任务超时
           const task = worker._currentTask;
-          console.log(
-            `Task ${task.id} in checkTimeouts: retries=${task.retries}, maxRetries=${task.maxRetries}. Should retry: ${this.shouldRetry(task)}`,
+          this.logger.debug(
+            `Task ${task.id} in checkTimeouts: retries=${task.retries}, maxRetries=${task.maxRetries}, shouldRetry=${this.shouldRetry(task)}. Pool stats: ${this.getStatsSummary()}`,
           );
 
           if (!task.fireAndForget) {
@@ -366,16 +367,15 @@ export class WorkerPool implements OnModuleDestroy {
           } else if (task.fireAndForget && this.shouldRetry(task)) {
             this.retryTask(task);
           } else if (task.fireAndForget && !this.shouldRetry(task)) {
-            console.error(
+            this.logger.error(
               `Fire-and-forget task ${task.id} timed out after maximum retries.`,
             );
           }
 
           // 终止超时的worker
           this.removeWorker(worker);
-          console.warn(
-            `Task ${task.id} on worker ${worker.threadId} timed out. Retrying: ${this.shouldRetry(task)}. Pool stats:`,
-            this.getStats(),
+          this.logger.warn(
+            `Task ${task.id} on worker ${worker.threadId} timed out. Retrying=${this.shouldRetry(task)}. Pool stats: ${this.getStatsSummary()}`,
           );
         }
       }
@@ -391,9 +391,8 @@ export class WorkerPool implements OnModuleDestroy {
     // If no idle workers, try to create one if under maxPoolSize
     if (!worker && this.workers.length < this.maxPoolSize) {
       worker = this.addWorker();
-      console.log(
-        `New worker ${worker.threadId} added. Pool stats:`,
-        this.getStats(),
+      this.logger.debug(
+        `New worker ${worker.threadId} added. Pool stats: ${this.getStatsSummary()}`,
       );
       // A newly added worker might not be immediately ready, or if worker creation fails
       if (!worker) {
@@ -401,9 +400,8 @@ export class WorkerPool implements OnModuleDestroy {
         setTimeout(() => {
           this.runNext();
         }, 100);
-        console.warn(
-          'Failed to create a new worker, retrying runNext in 100ms. Pool stats:',
-          this.getStats(),
+        this.logger.warn(
+          `Failed to create a new worker, retrying runNext in 100ms. Pool stats: ${this.getStatsSummary()}`,
         );
         return;
       }
@@ -415,17 +413,15 @@ export class WorkerPool implements OnModuleDestroy {
       setTimeout(() => {
         this.runNext();
       }, 100);
-      console.warn(
-        'No idle workers and maxPoolSize reached or worker creation delayed, retrying runNext in 100ms. Pool stats:',
-        this.getStats(),
+      this.logger.warn(
+        `No idle workers and maxPoolSize reached or worker creation delayed, retrying runNext in 100ms. Pool stats: ${this.getStatsSummary()}`,
       );
       return;
     }
 
     const task = this.taskQueue.shift()!;
-    console.log(
-      `Worker ${worker.threadId} starting task ${task.id}. Pool stats:`,
-      this.getStats(),
+    this.logger.debug(
+      `Worker ${worker.threadId} starting task ${task.id}. Pool stats: ${this.getStatsSummary()}`,
     );
 
     worker._currentTask = task;
@@ -446,8 +442,8 @@ export class WorkerPool implements OnModuleDestroy {
         funcHash,
         args: task.args,
       });
-      console.log(
-        `Task ${task.id} (cached) sent to worker ${worker.threadId}.`,
+      this.logger.debug(
+        `Task ${task.id} (cached) sent to worker ${worker.threadId}. Pool stats: ${this.getStatsSummary()}`,
       );
     } else {
       // 注册新函数
@@ -460,8 +456,8 @@ export class WorkerPool implements OnModuleDestroy {
         funcStr,
         funcHash,
       });
-      console.log(
-        `Task ${task.id}: function registration sent to worker ${worker.threadId}.`,
+      this.logger.debug(
+        `Task ${task.id}: function registration sent to worker ${worker.threadId}. Pool stats: ${this.getStatsSummary()}`,
       );
     }
 
@@ -556,6 +552,10 @@ export class WorkerPool implements OnModuleDestroy {
       activeTasks: this.activeTasks.size,
       functionCacheSize: this.functionCache.size,
     };
+  }
+
+  private getStatsSummary(): string {
+    return JSON.stringify(this.getStats());
   }
 
   public async destroy() {

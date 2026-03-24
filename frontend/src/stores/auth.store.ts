@@ -21,6 +21,10 @@ let initPromise: Promise<void> | null = null;
 let authSubscription: (() => void) | null = null;
 let latestSupabaseAccessToken: string | null = null;
 
+type RefreshUserOptions = {
+  forceBackendUserRefresh?: boolean;
+};
+
 function ensureAuthSubscription(): void {
   if (authSubscription) {
     return;
@@ -35,8 +39,22 @@ function ensureAuthSubscription(): void {
   authSubscription = data?.subscription?.unsubscribe ?? null;
 }
 
-async function syncBackendToken(session: Session | null): Promise<void> {
+async function fetchBackendCurrentUser(
+  token: string,
+): Promise<BackendCurrentUser | null> {
+  try {
+    return await backendCurrentUserService.getCurrentUser(token);
+  } catch {
+    return null;
+  }
+}
+
+async function syncBackendToken(
+  session: Session | null,
+  options?: RefreshUserOptions,
+): Promise<void> {
   const accessToken = session?.access_token?.trim() || "";
+  const forceBackendUserRefresh = options?.forceBackendUserRefresh === true;
 
   if (!accessToken) {
     latestSupabaseAccessToken = null;
@@ -46,12 +64,20 @@ async function syncBackendToken(session: Session | null): Promise<void> {
     return;
   }
 
-  if (
-    latestSupabaseAccessToken === accessToken &&
-    backendToken.value &&
-    backendUser.value
-  ) {
-    return;
+  if (latestSupabaseAccessToken === accessToken && backendToken.value) {
+    if (!forceBackendUserRefresh && backendUser.value) {
+      return;
+    }
+
+    const currentUser = await fetchBackendCurrentUser(backendToken.value);
+    if (currentUser) {
+      backendUser.value = currentUser;
+      return;
+    }
+
+    backendToken.value = null;
+    backendUser.value = null;
+    clearBackendToken();
   }
 
   const { token, error } =
@@ -68,24 +94,26 @@ async function syncBackendToken(session: Session | null): Promise<void> {
   latestSupabaseAccessToken = accessToken;
   backendToken.value = token;
   setBackendToken(token);
-
-  try {
-    backendUser.value = await backendCurrentUserService.getCurrentUser(token);
-  } catch {
-    backendUser.value = null;
-  }
+  backendUser.value = await fetchBackendCurrentUser(token);
 }
 
-async function refreshUser() {
+async function refreshUser(options?: RefreshUserOptions) {
   const { data, error } = await authService.getSession();
 
   if (!error) {
     user.value = data?.session?.user ?? null;
-    await syncBackendToken(data?.session ?? null);
+    await syncBackendToken(data?.session ?? null, options);
   }
 
   isReady.value = true;
   return { data, error };
+}
+
+async function refreshBackendCurrentUser(
+  force: boolean = false,
+): Promise<BackendCurrentUser | null> {
+  await refreshUser({ forceBackendUserRefresh: force || !backendUser.value });
+  return backendUser.value;
 }
 
 export async function initAuthStore() {
@@ -120,6 +148,7 @@ export function useAuthStore() {
     backendToken: readonly(backendToken),
     backendUser: readonly(backendUser),
     refreshUser,
+    refreshBackendCurrentUser,
     signOutFromAuthStore,
   };
 }

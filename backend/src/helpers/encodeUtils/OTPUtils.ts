@@ -1,12 +1,12 @@
-import { authenticator } from 'otplib';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
+import otplib from 'otplib';
+const { authenticator } = otplib;
 import * as qrcode from 'qrcode';
-
-type OTPAlgorithm = NonNullable<typeof authenticator.options.algorithm>;
 
 export interface OTPOptions {
   window?: number;
   step?: number;
-  algorithm?: OTPAlgorithm;
+  algorithm?: string;
   digits?: number;
 }
 
@@ -26,13 +26,10 @@ export class OTPUtils {
   private readonly options: OTPOptions;
 
   constructor(options: OTPOptions = {}) {
-    const defaultAlgorithm = (authenticator.options.algorithm ??
-      'sha1') as OTPAlgorithm;
-
     this.options = {
       window: 1,
       step: 30,
-      algorithm: defaultAlgorithm,
+      algorithm: 'sha1',
       digits: 6,
       ...options,
     };
@@ -43,7 +40,7 @@ export class OTPUtils {
     authenticator.options = {
       window: this.options.window,
       step: this.options.step,
-      algorithm: this.options.algorithm,
+      algorithm: this.options.algorithm as any,
       digits: this.options.digits,
     };
   }
@@ -104,18 +101,11 @@ export class OTPUtils {
    */
   verifyToken(token: string, secret: string, window?: number): boolean {
     try {
-      if (window === undefined) {
-        return authenticator.verify({ token, secret });
-      }
-
-      const previousWindow = authenticator.options.window;
-      authenticator.options = { ...authenticator.options, window };
-      const result = authenticator.verify({ token, secret });
-      authenticator.options = {
-        ...authenticator.options,
-        window: previousWindow,
-      };
-      return result;
+      return authenticator.verify({
+        token,
+        secret,
+        window: window ?? this.options.window,
+      } as any);
     } catch (error) {
       throw new Error(
         `Failed to verify OTP token: ${(error as Error).message}`,
@@ -136,20 +126,11 @@ export class OTPUtils {
     window?: number,
   ): VerifyResult {
     try {
-      let result: boolean;
-
-      if (window === undefined) {
-        result = authenticator.verify({ token, secret });
-      } else {
-        const previousWindow = authenticator.options.window;
-        authenticator.options = { ...authenticator.options, window };
-        result = authenticator.verify({ token, secret });
-        authenticator.options = {
-          ...authenticator.options,
-          window: previousWindow,
-        };
-      }
-
+      const result = authenticator.verify({
+        token,
+        secret,
+        window: window ?? this.options.window,
+      } as any);
       return {
         isValid: result,
         delta: result ? authenticator.timeUsed() : undefined,

@@ -6,9 +6,13 @@ export class CryptoHelper {
    * @param obj 任意对象
    * @returns MD5 哈希值（16进制字符串）
    */
-  static calculateObjectMD5(obj: Record<string, unknown>): string {
+  static calculateObjectMD5(obj: unknown): string {
     // 将对象转换为规范的 JSON 字符串（按键排序）
-    const jsonStr = JSON.stringify(obj, Object.keys(obj).sort());
+    const objectKeys =
+      obj && typeof obj === 'object'
+        ? Object.keys(obj as Record<string, unknown>).sort()
+        : [];
+    const jsonStr = JSON.stringify(obj, objectKeys);
     return this.calculateMD5(jsonStr);
   }
 

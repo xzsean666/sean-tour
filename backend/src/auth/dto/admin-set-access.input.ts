@@ -3,6 +3,9 @@ import { Field, InputType } from '@nestjs/graphql';
 @InputType()
 export class AdminSetAccessInput {
   @Field({ nullable: true })
+  recordId?: string;
+
+  @Field({ nullable: true })
   userId?: string;
 
   @Field({ nullable: true })

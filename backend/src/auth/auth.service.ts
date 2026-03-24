@@ -9,6 +9,8 @@ import { EmailAuthInput } from './dto/email-auth.input';
 import { GoogleLoginInput } from './dto/google-login.input';
 import { SupabaseTokenLoginInput } from './dto/supabase-token-login.input';
 import { CurrentUserDto } from './dto/current-user.dto';
+import { PageInput } from '../common/dto/page.input';
+import { RoleAccessAuditPage } from './dto/role-access-audit-page.dto';
 import { RoleAccessService } from './role-access.service';
 
 @Injectable()
@@ -135,6 +137,18 @@ export class AuthService {
     actorUser: Record<string, unknown> | undefined,
   ): Promise<AdminAccess> {
     return this.adminAccessService.setAdminAccess(input, actorUser);
+  }
+
+  async listRoleAccessAuditLogs(
+    role: 'ADMIN' | 'SUPPORT_AGENT',
+    recordId?: string,
+    page?: PageInput,
+  ): Promise<RoleAccessAuditPage> {
+    return this.adminAccessService.listRoleAccessAuditLogs(
+      role,
+      recordId,
+      page,
+    );
   }
 
   private assertEmailAndPassword(email?: string, password?: string) {

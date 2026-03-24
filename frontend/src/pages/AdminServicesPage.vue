@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Card from "primevue/card";
 import InputText from "primevue/inputtext";
@@ -83,6 +84,12 @@ type ScheduleDateBoardItem = {
   unassignedCount: number;
 };
 
+type ServiceSelectionOptions = {
+  syncRoute?: boolean;
+};
+
+const ADMIN_SERVICES_ROUTE_QUERY_KEYS = ["serviceId", "scheduleDate"] as const;
+
 function createEmptyForm(): ServiceForm {
   return {
     id: "",
@@ -129,6 +136,7 @@ const errorMessage = ref("");
 const successMessage = ref("");
 const selectedServiceId = ref("");
 const resourceScheduleDate = ref("");
+const resourceScheduleDraftDate = ref("");
 const auditLogs = ref<ServiceAuditLog[]>([]);
 const auditTotal = ref(0);
 const resourceSchedule = ref<AdminServiceResourceSchedule | null>(null);
@@ -137,6 +145,9 @@ const bookingAssignmentLoading = ref<Record<string, boolean>>({});
 const bookingAssignmentActionLoading = ref<Record<string, boolean>>({});
 const form = reactive<ServiceForm>(createEmptyForm());
 const bookingAssignmentSelections = reactive<Record<string, string>>({});
+const route = useRoute();
+const router = useRouter();
+const skipNextRouteWatch = ref(false);
 const { backendUser } = useAuthStore();
 
 const hasAdminAccess = computed(() => !!backendUser.value?.isAdmin);
@@ -335,6 +346,83 @@ function normalizeOptionalText(value: string): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function readRouteQueryValue(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    return readRouteQueryValue(value[0]);
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function parseRouteScheduleDate(value: unknown): string {
+  const normalized = readRouteQueryValue(value);
+  if (!normalized || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return "";
+  }
+
+  return normalized;
+}
+
+function buildRouteQuery(): Record<string, string> {
+  const query: Record<string, string> = {};
+
+  if (selectedServiceId.value) {
+    query.serviceId = selectedServiceId.value;
+  }
+
+  if (resourceScheduleDate.value) {
+    query.scheduleDate = resourceScheduleDate.value;
+  }
+
+  return query;
+}
+
+function getCurrentRouteQuery(): Record<string, string> {
+  const current: Record<string, string> = {};
+
+  ADMIN_SERVICES_ROUTE_QUERY_KEYS.forEach((key) => {
+    const value = readRouteQueryValue(route.query[key]);
+    if (value) {
+      current[key] = value;
+    }
+  });
+
+  return current;
+}
+
+function isSameRouteQuery(
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every(
+    (key, index) => key === rightKeys[index] && left[key] === right[key],
+  );
+}
+
+async function syncRouteQuery(): Promise<void> {
+  const nextQuery = buildRouteQuery();
+  if (isSameRouteQuery(nextQuery, getCurrentRouteQuery())) {
+    return;
+  }
+
+  skipNextRouteWatch.value = true;
+  await router.replace({
+    query: nextQuery,
+  });
+}
+
 function toNumber(value: string, fieldName: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -420,10 +508,13 @@ function fillBaseFields(service: AdminServiceItem): void {
   form.voucherTemplate = service.voucherTemplate || "";
 }
 
-function resetToCreateMode(): void {
+async function resetToCreateMode(
+  options: ServiceSelectionOptions = {},
+): Promise<void> {
   Object.assign(form, createEmptyForm());
   selectedServiceId.value = "";
   resourceScheduleDate.value = "";
+  resourceScheduleDraftDate.value = "";
   auditLogs.value = [];
   auditTotal.value = 0;
   resourceSchedule.value = null;
@@ -435,6 +526,10 @@ function resetToCreateMode(): void {
   }
   successMessage.value = "";
   errorMessage.value = "";
+
+  if (options.syncRoute !== false) {
+    await syncRouteQuery();
+  }
 }
 
 function formatDate(value: string): string {
@@ -554,6 +649,11 @@ async function loadServices(): Promise<void> {
   }
 }
 
+async function refreshServices(): Promise<void> {
+  await loadServices();
+  await applyRouteSelection();
+}
+
 async function loadAuditLogs(serviceId: string): Promise<void> {
   if (!hasAdminAccess.value) {
     auditLogs.value = [];
@@ -606,19 +706,25 @@ async function loadResourceSchedule(serviceId: string): Promise<void> {
 }
 
 async function clearResourceScheduleFilter(): Promise<void> {
+  resourceScheduleDraftDate.value = "";
   resourceScheduleDate.value = "";
 
   if (form.id) {
     await loadResourceSchedule(form.id);
   }
+
+  await syncRouteQuery();
 }
 
 async function applyResourceScheduleDate(date: string): Promise<void> {
+  resourceScheduleDraftDate.value = date;
   resourceScheduleDate.value = date;
 
   if (form.id) {
     await loadResourceSchedule(form.id);
   }
+
+  await syncRouteQuery();
 }
 
 function getBookingAssignmentOptions(bookingId: string): ServiceResource[] {
@@ -740,8 +846,12 @@ async function submitBookingAssignment(
   }
 }
 
-async function selectService(service: AdminServiceItem): Promise<void> {
+async function selectService(
+  service: AdminServiceItem,
+  options: ServiceSelectionOptions = {},
+): Promise<void> {
   selectedServiceId.value = service.id;
+  resourceScheduleDraftDate.value = resourceScheduleDate.value;
   detailLoading.value = true;
   errorMessage.value = "";
   successMessage.value = "";
@@ -763,6 +873,55 @@ async function selectService(service: AdminServiceItem): Promise<void> {
     resourceSchedule.value = null;
   } finally {
     detailLoading.value = false;
+  }
+
+  if (options.syncRoute !== false) {
+    await syncRouteQuery();
+  }
+}
+
+async function applyRouteSelection(): Promise<void> {
+  const routeServiceId = readRouteQueryValue(route.query.serviceId) || "";
+  const routeScheduleDate = parseRouteScheduleDate(route.query.scheduleDate);
+
+  resourceScheduleDate.value = routeScheduleDate;
+  resourceScheduleDraftDate.value = routeScheduleDate;
+
+  if (!routeServiceId) {
+    if (form.id || selectedServiceId.value) {
+      await resetToCreateMode({ syncRoute: false });
+    }
+    if (Object.keys(getCurrentRouteQuery()).length > 0) {
+      await syncRouteQuery();
+    }
+    return;
+  }
+
+  if (services.value.length === 0 && !listLoading.value) {
+    await loadServices();
+  }
+
+  const targetService =
+    services.value.find((item) => item.id === routeServiceId) || null;
+
+  if (!targetService) {
+    await resetToCreateMode({ syncRoute: false });
+    await syncRouteQuery();
+    return;
+  }
+
+  if (form.id === routeServiceId) {
+    resourceScheduleDraftDate.value = resourceScheduleDate.value;
+    await loadResourceSchedule(routeServiceId);
+    if (!isSameRouteQuery(buildRouteQuery(), getCurrentRouteQuery())) {
+      await syncRouteQuery();
+    }
+    return;
+  }
+
+  await selectService(targetService, { syncRoute: false });
+  if (!isSameRouteQuery(buildRouteQuery(), getCurrentRouteQuery())) {
+    await syncRouteQuery();
   }
 }
 
@@ -931,8 +1090,20 @@ async function deleteService(hardDelete: boolean): Promise<void> {
 }
 
 onMounted(async () => {
-  await loadServices();
+  await refreshServices();
 });
+
+watch(
+  () => route.query,
+  async () => {
+    if (skipNextRouteWatch.value) {
+      skipNextRouteWatch.value = false;
+      return;
+    }
+
+    await applyRouteSelection();
+  },
+);
 </script>
 
 <template>
@@ -964,7 +1135,7 @@ onMounted(async () => {
             icon="pi pi-refresh"
             text
             :loading="listLoading"
-            @click="loadServices"
+            @click="refreshServices"
           />
         </div>
       </template>
@@ -1396,7 +1567,7 @@ onMounted(async () => {
             </h3>
             <div class="flex flex-wrap items-center gap-2">
               <input
-                v-model="resourceScheduleDate"
+                v-model="resourceScheduleDraftDate"
                 type="date"
                 class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
               />
@@ -1405,7 +1576,7 @@ onMounted(async () => {
                 icon="pi pi-filter"
                 text
                 :loading="resourceScheduleLoading"
-                @click="loadResourceSchedule(form.id)"
+                @click="applyResourceScheduleDate(resourceScheduleDraftDate)"
               />
               <Button
                 v-if="resourceScheduleDate"

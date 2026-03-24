@@ -1,5 +1,6 @@
-// logger.service.ts
 import { LoggerService } from '@nestjs/common';
+import { mkdirSync } from 'fs';
+import { join } from 'path';
 import {
   createLogger,
   format,
@@ -10,12 +11,13 @@ import {
 import GelfTransport from 'winston-gelf';
 import { config } from '../config/index';
 
-console.log('config.PROJECT_NAME', config.PROJECT_NAME);
-
 export class CommonLogger implements LoggerService {
   private logger: Logger;
 
   constructor() {
+    const logDirectory = join(process.cwd(), 'logs');
+    mkdirSync(logDirectory, { recursive: true });
+
     const GraylogTransport = GelfTransport as unknown as new (options: {
       gelfPro: {
         fields: {
@@ -31,29 +33,26 @@ export class CommonLogger implements LoggerService {
       };
     }) => transport;
 
-    // 基础传输：本地文件
     const logTransports: transport[] = [
       new transports.File({
-        filename: 'logs/error.log',
-        level: 'error', // 只保存 error 级别
+        filename: join(logDirectory, 'error.log'),
+        level: 'error',
       }),
       new transports.File({
-        filename: 'logs/combined.log',
+        filename: join(logDirectory, 'combined.log'),
       }),
     ];
 
-    // 如果配置了 Graylog，则添加 Graylog 传输
     if (config.GRAYLOG_HOST) {
-      console.log('Graylog configured, adding Graylog transport');
       const graylogTransport = new GraylogTransport({
         gelfPro: {
           fields: {
             facility: `${config.PROJECT_NAME ?? ''}${config.PUBLIC_IP ? `_${config.PUBLIC_IP}` : ''}`,
-          }, // 自定义来源
+          },
           adapterName: 'udp',
           adapterOptions: {
-            host: config.GRAYLOG_HOST, // Graylog server
-            port: config.GRAYLOG_PORT, // Graylog GELF UDP 输入端口
+            host: config.GRAYLOG_HOST,
+            port: config.GRAYLOG_PORT,
           },
           environment: config.NODE_ENV,
           version: '1.0',
@@ -61,21 +60,15 @@ export class CommonLogger implements LoggerService {
       }) as unknown as transport;
 
       logTransports.push(graylogTransport);
-    } else {
-      console.log('Graylog not configured, using local logging only');
     }
 
     this.logger = createLogger({
-      level: 'info',
-      format: format.combine(
-        format.timestamp(),
-        format.json(), // 本地文件保存为 JSON 格式，便于解析
-      ),
+      level: config.NODE_ENV === 'production' ? 'info' : 'debug',
+      format: format.combine(format.timestamp(), format.json()),
       transports: logTransports,
     });
 
-    // 如果你在开发环境，也想看到 console 日志
-    if (process.env.NODE_ENV !== 'production') {
+    if (config.NODE_ENV !== 'production') {
       this.logger.add(
         new transports.Console({
           format: format.combine(format.colorize(), format.simple()),

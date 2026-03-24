@@ -664,6 +664,16 @@ export class PaymentService {
 
     await this.travelDB.put(`payment:${payment.id}`, normalized);
     await this.syncBookingStatus(normalized);
+    await this.logPaymentEvent(
+      normalized,
+      {
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+        status: PaymentStatus.EXPIRED,
+      },
+      PaymentEventSource.SYSTEM,
+      this.resolveActor(PaymentEventSource.SYSTEM),
+    );
     await this.notifyPayment(
       payment.userId,
       'Payment expired',
@@ -785,6 +795,10 @@ export class PaymentService {
 
     if (source === PaymentEventSource.SYNC) {
       return 'sync_job';
+    }
+
+    if (source === PaymentEventSource.SYSTEM) {
+      return 'system_expiry';
     }
 
     return 'admin_auth_code';

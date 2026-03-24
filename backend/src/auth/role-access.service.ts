@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { DBService, PGKVDatabase } from '../common/db.service';
 import { config } from '../config';
 import {
@@ -11,6 +12,7 @@ import {
   isAdminUser,
   normalizeAdminEmail,
 } from './admin-access.util';
+import { RoleAccessAuditAction } from './dto/role-access-audit-action.enum';
 
 export type RoleAccessRole = 'ADMIN' | 'SUPPORT_AGENT';
 
@@ -33,11 +35,28 @@ export type RoleAccessEntry = {
 };
 
 export type SetRoleAccessInput = {
+  recordId?: string;
   userId?: string;
   email?: string;
   displayName?: string;
   note?: string;
   enabled: boolean;
+};
+
+export type RoleAccessAuditEntry = {
+  id: string;
+  role: RoleAccessRole;
+  recordId: string;
+  action: RoleAccessAuditAction;
+  actor: string;
+  summary: string;
+  userId?: string;
+  email?: string;
+  displayName?: string;
+  note?: string;
+  enabled: boolean;
+  previousEnabled?: boolean;
+  createdAt: string;
 };
 
 type RoleAccessRecord = {
@@ -55,6 +74,10 @@ type RoleAccessRecord = {
   updatedBy?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+type RoleAccessAuditRecord = RoleAccessAuditEntry & {
+  entityType: 'ROLE_ACCESS_AUDIT';
 };
 
 type LegacyAdminAccessRecord = {
@@ -89,6 +112,13 @@ type LegacySupportAgentRecord = {
 };
 
 type StoredRow = {
+  value: unknown;
+  created_at?: Date;
+  updated_at?: Date;
+};
+
+type SearchJsonRow = {
+  key: string;
   value: unknown;
   created_at?: Date;
   updated_at?: Date;
@@ -201,6 +231,7 @@ export class RoleAccessService {
       protectLastAdmin?: boolean;
     },
   ): Promise<RoleAccessEntry> {
+    const requestedRecordId = this.normalizeOptionalText(input.recordId);
     const userId = this.normalizeOptionalText(input.userId);
     const email = this.normalizeOptionalEmail(input.email);
 
@@ -212,14 +243,28 @@ export class RoleAccessService {
       throw new BadRequestException('userId or email is required');
     }
 
-    const recordId = userId ? `user:${userId}` : `email:${email}`;
-    if (this.isEnvManagedRecord(role, recordId)) {
+    const targetRecordId = userId ? `user:${userId}` : `email:${email}`;
+    const currentRecordId = requestedRecordId ?? targetRecordId;
+
+    if (
+      this.isEnvManagedRecord(role, currentRecordId) ||
+      this.isEnvManagedRecord(role, targetRecordId)
+    ) {
       throw new ForbiddenException(
         'Environment-managed role access must be updated in backend env config',
       );
     }
 
-    const existing = await this.getRoleRecord(role, recordId);
+    const existing = await this.getRoleRecord(role, currentRecordId);
+    if (currentRecordId !== targetRecordId) {
+      const existingTarget = await this.getRoleRecord(role, targetRecordId);
+      if (existingTarget) {
+        throw new BadRequestException(
+          'Role access entry already exists for the target principal',
+        );
+      }
+    }
+
     if (!input.enabled && !existing) {
       throw new NotFoundException('Role access entry not found');
     }
@@ -230,7 +275,7 @@ export class RoleAccessService {
       existing?.enabled &&
       !input.enabled
     ) {
-      await this.assertNotRemovingLastAdmin(recordId);
+      await this.assertNotRemovingLastAdmin(currentRecordId);
     }
 
     const actor = buildAdminActor(actorUser);
@@ -238,11 +283,11 @@ export class RoleAccessService {
     const record: RoleAccessRecord = {
       entityType: 'ROLE_ACCESS',
       role,
-      id: recordId,
+      id: targetRecordId,
       principalType: userId ? 'USER_ID' : 'EMAIL',
       principalValue: userId || email || '',
       userId,
-      email,
+      email: email ?? existing?.email,
       displayName:
         this.normalizeOptionalText(input.displayName) ?? existing?.displayName,
       note: this.normalizeOptionalText(input.note) ?? existing?.note,
@@ -253,8 +298,63 @@ export class RoleAccessService {
       updatedAt: now,
     };
 
-    await this.travelDB.put(this.buildRoleAccessKey(role, record.id), record);
+    const writes: Array<Promise<unknown>> = [
+      this.travelDB.put(this.buildRoleAccessKey(role, record.id), record),
+      this.appendRoleAccessAudit(role, record, existing, actor, now),
+    ];
+
+    if (existing && currentRecordId !== targetRecordId) {
+      writes.push(this.deleteRoleRecord(role, currentRecordId));
+    }
+
+    await Promise.all(writes);
     return this.toRoleAccessEntry(record);
+  }
+
+  async listRoleAccessAuditLogs(
+    role: RoleAccessRole,
+    options?: {
+      recordId?: string;
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<{
+    items: RoleAccessAuditEntry[];
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  }> {
+    const limit = Math.min(Math.max(options?.limit ?? 20, 1), 100);
+    const offset = Math.max(options?.offset ?? 0, 0);
+    const recordId = this.normalizeOptionalText(options?.recordId);
+
+    const result = await this.travelDB.searchJson({
+      contains: {
+        entityType: 'ROLE_ACCESS_AUDIT',
+        role,
+        ...(recordId ? { recordId } : {}),
+      },
+      limit,
+      offset,
+      include_total: true,
+      order_by: 'DESC',
+      order_by_field: 'created_at',
+    });
+
+    const items = (result.data as SearchJsonRow[])
+      .map((row) => this.normalizeRoleAccessAuditRecord(row.value, role))
+      .filter((value): value is RoleAccessAuditRecord => !!value)
+      .map((record) => this.toRoleAccessAuditEntry(record));
+    const total = result.total ?? items.length;
+
+    return {
+      items,
+      total,
+      limit,
+      offset,
+      hasMore: offset + items.length < total,
+    };
   }
 
   private async assertNotRemovingLastAdmin(recordId: string): Promise<void> {
@@ -413,6 +513,30 @@ export class RoleAccessService {
     return `role_access:${role}:${recordId}`;
   }
 
+  private async deleteRoleRecord(
+    role: RoleAccessRole,
+    recordId: string,
+  ): Promise<void> {
+    const deletes: Array<Promise<boolean>> = [
+      this.travelDB.delete(this.buildRoleAccessKey(role, recordId)),
+    ];
+
+    if (role === 'ADMIN') {
+      deletes.push(this.travelDB.delete(`admin_access:${recordId}`));
+    } else if (recordId.startsWith('user:')) {
+      deletes.push(this.travelDB.delete(`support_agent:${recordId.slice(5)}`));
+    }
+
+    await Promise.all(deletes);
+  }
+
+  private buildRoleAccessAuditKey(
+    role: RoleAccessRole,
+    auditId: string,
+  ): string {
+    return `role_access_audit:${role}:${auditId}`;
+  }
+
   private toRoleAccessEntry(record: RoleAccessRecord): RoleAccessEntry {
     return {
       id: record.id,
@@ -430,6 +554,26 @@ export class RoleAccessService {
       updatedBy: record.updatedBy,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+    };
+  }
+
+  private toRoleAccessAuditEntry(
+    record: RoleAccessAuditRecord,
+  ): RoleAccessAuditEntry {
+    return {
+      id: record.id,
+      role: record.role,
+      recordId: record.recordId,
+      action: record.action,
+      actor: record.actor,
+      summary: record.summary,
+      userId: record.userId,
+      email: record.email,
+      displayName: record.displayName,
+      note: record.note,
+      enabled: record.enabled,
+      previousEnabled: record.previousEnabled,
+      createdAt: record.createdAt,
     };
   }
 
@@ -473,6 +617,37 @@ export class RoleAccessService {
     }
 
     return candidate as RoleAccessRecord;
+  }
+
+  private normalizeRoleAccessAuditRecord(
+    value: unknown,
+    role: RoleAccessRole,
+  ): RoleAccessAuditRecord | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const candidate = value as Partial<RoleAccessAuditRecord>;
+    if (
+      candidate.entityType !== 'ROLE_ACCESS_AUDIT' ||
+      candidate.role !== role
+    ) {
+      return null;
+    }
+
+    if (
+      typeof candidate.id !== 'string' ||
+      typeof candidate.recordId !== 'string' ||
+      typeof candidate.action !== 'string' ||
+      typeof candidate.actor !== 'string' ||
+      typeof candidate.summary !== 'string' ||
+      typeof candidate.enabled !== 'boolean' ||
+      typeof candidate.createdAt !== 'string'
+    ) {
+      return null;
+    }
+
+    return candidate as RoleAccessAuditRecord;
   }
 
   private normalizeLegacyAdminAccessRecord(
@@ -570,5 +745,78 @@ export class RoleAccessService {
   private normalizeOptionalEmail(value?: string): string | undefined {
     const normalized = this.normalizeOptionalText(value);
     return normalized ? normalizeAdminEmail(normalized) : undefined;
+  }
+
+  private async appendRoleAccessAudit(
+    role: RoleAccessRole,
+    record: RoleAccessRecord,
+    existing: RoleAccessRecord | null,
+    actor: string,
+    createdAt: string,
+  ): Promise<void> {
+    const action = this.resolveRoleAccessAuditAction(existing, record);
+    const auditId = `raudit_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+    const auditRecord: RoleAccessAuditRecord = {
+      entityType: 'ROLE_ACCESS_AUDIT',
+      id: auditId,
+      role,
+      recordId: record.id,
+      action,
+      actor,
+      summary: this.buildRoleAccessAuditSummary(role, record, action),
+      userId: record.userId,
+      email: record.email,
+      displayName: record.displayName,
+      note: record.note,
+      enabled: record.enabled,
+      previousEnabled: existing?.enabled,
+      createdAt,
+    };
+
+    await this.travelDB.put(
+      this.buildRoleAccessAuditKey(role, auditId),
+      auditRecord,
+    );
+  }
+
+  private resolveRoleAccessAuditAction(
+    existing: RoleAccessRecord | null,
+    next: RoleAccessRecord,
+  ): RoleAccessAuditAction {
+    if (!existing) {
+      return RoleAccessAuditAction.CREATED;
+    }
+
+    if (existing.enabled && !next.enabled) {
+      return RoleAccessAuditAction.DISABLED;
+    }
+
+    if (!existing.enabled && next.enabled) {
+      return RoleAccessAuditAction.ENABLED;
+    }
+
+    return RoleAccessAuditAction.UPDATED;
+  }
+
+  private buildRoleAccessAuditSummary(
+    role: RoleAccessRole,
+    record: RoleAccessRecord,
+    action: RoleAccessAuditAction,
+  ): string {
+    const roleLabel = role === 'ADMIN' ? 'admin' : 'support agent';
+    const principal =
+      record.displayName || record.email || record.userId || record.id;
+
+    switch (action) {
+      case RoleAccessAuditAction.CREATED:
+        return `Created ${roleLabel} grant for ${principal}.`;
+      case RoleAccessAuditAction.ENABLED:
+        return `Enabled ${roleLabel} grant for ${principal}.`;
+      case RoleAccessAuditAction.DISABLED:
+        return `Disabled ${roleLabel} grant for ${principal}.`;
+      case RoleAccessAuditAction.UPDATED:
+      default:
+        return `Updated ${roleLabel} grant for ${principal}.`;
+    }
   }
 }
